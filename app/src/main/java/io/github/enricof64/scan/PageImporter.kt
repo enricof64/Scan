@@ -52,7 +52,7 @@ object Images {
 }
 
 /**
- * Copies a source image (content:// URI from the ML Kit scanner result or the
+ * Copies a source image (content:// URI from our camera capture or the
  * photo picker) into the app's private storage as a page JPEG.
  */
 class PageImporter(private val context: Context) {

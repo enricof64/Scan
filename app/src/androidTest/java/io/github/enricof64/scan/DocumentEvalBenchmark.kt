@@ -23,13 +23,14 @@ import kotlin.math.roundToInt
  * photos pushed by the host to /data/local/tmp/openscan-eval (index.json
  * lists the images and their document grouping).
  *
- * The production scanner (ML Kit document scanner) needs a signed-in Play
- * store for its on-demand module, which emulators don't have — see
- * docs/EVALUATION.md. This harness therefore measures the full pipeline
- * geometry with a test-only OpenCV detector (Canny edges → external contours
- * → convex quad approximation → perspective crop), then the app's real
- * [PdfExporter.exportPdf] for every document group. Per-image overlays,
- * crops, PDFs and a results.json land in filesDir/eval for the host to pull.
+ * The harness measures the full pipeline geometry with a test-only OpenCV
+ * detector (Canny edges → external contours → convex quad approximation →
+ * perspective crop), then the app's real [PdfExporter.exportPdf] for every
+ * document group. (Historically this test-only detector existed because the
+ * GMS document scanner needed Play services; in this fork the production
+ * capture is the app's own OpenCV pipeline — see docs/EVALUATION.md.)
+ * Per-image overlays, crops, PDFs and a results.json land in filesDir/eval
+ * for the host to pull.
  */
 @RunWith(AndroidJUnit4::class)
 class DocumentEvalBenchmark {

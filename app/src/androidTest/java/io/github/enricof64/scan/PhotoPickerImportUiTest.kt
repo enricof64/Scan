@@ -18,7 +18,6 @@ import kotlin.math.abs
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -26,12 +25,10 @@ import org.junit.runner.RunWith
  * Drives the real app UI across process boundaries with UiAutomator:
  *
  *  - the photo-picker import path (Documents → "Import images" → system
- *    picker → select → new document with the page on disk), which is the
- *    exact flow a user on a device without the ML Kit scanner module gets;
+ *    picker → select → new document with the page on disk), the main
+ *    import flow of this fork (capture is the own CameraX viewfinder);
  *  - the same path with a three-image multi-select, checking the batch
- *    lands complete and is confirmed with a "Added 3 pages" summary;
- *  - the graceful fallback when Play services are missing and the scan
- *    button cannot open the document scanner (no crash, import offered).
+ *    lands complete and is confirmed with a "Added 3 pages" summary.
  *
  * These complement BatchPipelineInstrumentedTest, which exercises the
  * repository layer below the UI.
@@ -245,46 +242,4 @@ class PhotoPickerImportUiTest {
         }
     }
 
-    @Test
-    fun scanWithoutPlayServicesShowsTheFallbackInsteadOfCrashing() {
-        // On devices WITH Play services the scanner opens (or shows its own
-        // module-download UI) instead of failing into our fallback — the
-        // premise of this test only holds on non-GMS images. Skip there.
-        val hasPlayServices = runCatching {
-            target().packageManager.getPackageInfo("com.google.android.gms", 0)
-        }.isSuccess
-        assumeTrue("device has Play services; the fallback path never shows there", !hasPlayServices)
-
-        val device = device()
-        launchApp(device)
-
-        // The Scan FAB lives on the library screen; its Text() is not exposed
-        // to accessibility queries, so match the icon's contentDescription.
-        val scan = device.wait(Until.findObject(By.desc("Scan")), 5_000)
-            ?: run {
-                device.pressBack()
-                device.wait(Until.findObject(By.desc("Scan")), 5_000)
-            }
-        assertNotNull("library screen with the Scan button never appeared", scan)
-        scan!!.click()
-
-        // CaptureScreen auto-starts the ML Kit scanner; on a device without
-        // Play services the request fails and must degrade to the error +
-        // gallery-import fallback, not crash.
-        assertTrue(
-            "scanner-unavailable fallback did not appear",
-            device.wait(Until.hasObject(By.textContains("document scanner is unavailable")), 30_000),
-        )
-        assertTrue(
-            device.wait(Until.hasObject(By.text("Import images from the gallery")), 5_000),
-        )
-
-        // Cancel is optional to the assertion — the point of this test is
-        // that the scanner's absence degrades to the fallback, not a crash.
-        device.wait(Until.findObject(By.text("Cancel")), 5_000)?.click()
-        assertTrue(
-            "app should stay in the foreground after canceling the capture flow",
-            device.wait(Until.hasObject(By.text("OpenScan")), 10_000),
-        )
-    }
 }

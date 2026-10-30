@@ -35,8 +35,8 @@ import org.junit.runner.RunWith
  * The full batch pipeline against a real (in-memory) Room database and real
  * page files: import a three-page batch, reorder it, delete a page, then
  * produce both exports and inspect them. These are the exact code paths the
- * UI drives after ML Kit capture — the GMS scan activity itself needs Play
- * Services hardware and is verified on device, not here.
+ * UI drives after capture (own CameraX viewfinder or photo-picker import);
+ * the camera flow needs real hardware and is verified on device, not here.
  *
  * Regression guard: the first version of PageImporter threw "cannot open"
  * on every URI because the elvis was attached to the bounds-only decode
@@ -162,7 +162,7 @@ class BatchPipelineInstrumentedTest {
     /**
      * Writes a scan into the FileProvider-covered exports cache and hands it
      * back as a content:// URI — the same shape of source the app receives
-     * from ML Kit capture and the photo picker.
+     * from our camera capture and the photo picker.
      */
     private fun writeScanJpeg(name: String): Uri {
         val bitmap = Bitmap.createBitmap(800, 1000, Bitmap.Config.ARGB_8888)
