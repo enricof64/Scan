@@ -16,3 +16,10 @@ local.properties
 .secrets/
 # local test corpus (third-party images, licenses vary) stays out of the repo
 /testdata/
+# local sandbox build toolchain, caches and scratch — never part of the repo
+/.toolchain/
+/.gradle-home/
+/.sqltmp/
+/.apkcheck/
+# user chat attachments are never committed
+/.uploads/
