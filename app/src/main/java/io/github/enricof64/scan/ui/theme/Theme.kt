@@ -32,14 +32,34 @@ private val DarkColors = darkColorScheme(
     surface = Color(0xFF101413),
 )
 
+/** Theme modes stored in settings; anything else behaves like AUTO. */
+object ThemeMode {
+    const val AUTO = "auto"
+    const val LIGHT = "light"
+    const val DARK = "dark"
+
+    val ALL = listOf(AUTO, LIGHT, DARK)
+
+    fun label(mode: String): String = when (mode) {
+        LIGHT -> "Light"
+        DARK -> "Dark"
+        else -> "Auto"
+    }
+}
+
 @Composable
-fun OpenScanTheme(content: @Composable () -> Unit) {
-    val darkTheme = isSystemInDarkTheme()
+fun OpenScanTheme(themeMode: String = ThemeMode.AUTO, content: @Composable () -> Unit) {
+    val systemDark = isSystemInDarkTheme()
+    val useDark = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        else -> systemDark
+    }
     val context = LocalContext.current
     val colorScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        darkTheme -> DarkColors
+            if (useDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        useDark -> DarkColors
         else -> LightColors
     }
     MaterialTheme(colorScheme = colorScheme, content = content)

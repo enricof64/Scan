@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +35,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.ScanFilter
+import io.github.enricof64.scan.ui.theme.ThemeMode
 import io.github.enricof64.scan.UploadStats
 import io.github.enricof64.scan.update.ReleaseChecker
 import io.github.enricof64.scan.update.UpdateMonitor
@@ -94,6 +96,14 @@ class SettingsViewModel(
         viewModelScope.launch { settings.setAutoCaptureEnabled(enabled) }
     }
 
+    /** Theme override; follows the system until the user picks one. */
+    val themeMode: StateFlow<String> = settings.themeMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.AUTO)
+
+    fun setThemeMode(mode: String) {
+        viewModelScope.launch { settings.setThemeMode(mode) }
+    }
+
     /** Visible developer-share status (item 0). */
     val uploadStats: StateFlow<UploadStats> = repository.observeUploadStats()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UploadStats())
@@ -116,10 +126,12 @@ fun SettingsScreen(
     val developerMode by viewModel.developerModeEnabled.collectAsState()
     val filterDefault by viewModel.filterDefault.collectAsState()
     val autoCapture by viewModel.autoCaptureEnabled.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     val uploadStats by viewModel.uploadStats.collectAsState()
     val updateState by updateMonitor.state.collectAsState()
     val context = LocalContext.current
     var filterPickerOpen by remember { mutableStateOf(false) }
+    var themePickerOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -140,6 +152,18 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+
+            SettingChoiceRow(
+                title = "Theme",
+                description = "Light or dark, or follow the system setting.",
+                value = ThemeMode.label(themeMode),
+                onClick = { themePickerOpen = true },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
             Text("Capture", style = MaterialTheme.typography.titleMedium)
 
             SettingSwitchRow(
@@ -198,6 +222,26 @@ fun SettingsScreen(
                 onClick = onOpenCameraDiagnostics,
                 modifier = Modifier.padding(top = 16.dp),
             )
+
+            if (themePickerOpen) {
+                AlertDialog(
+                    onDismissRequest = { themePickerOpen = false },
+                    title = { Text("Theme") },
+                    text = {
+                        Column {
+                            ThemeMode.ALL.forEach { mode ->
+                                TextButton(onClick = {
+                                    themePickerOpen = false
+                                    viewModel.setThemeMode(mode)
+                                }) {
+                                    Text(ThemeMode.label(mode))
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                )
+            }
 
             SettingSwitchRow(
                 title = "Developer mode",

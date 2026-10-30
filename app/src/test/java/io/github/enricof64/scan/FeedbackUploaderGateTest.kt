@@ -2,6 +2,7 @@ package io.github.enricof64.scan
 
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.FeedbackUploader
+import io.github.enricof64.scan.ui.theme.ThemeMode
 import java.io.File
 import java.net.URL
 import java.util.UUID
@@ -37,6 +38,8 @@ class FeedbackUploaderGateTest {
         override suspend fun setFilterDefault(filterId: String) = Unit
         override val autoCaptureEnabled = MutableStateFlow(false)
         override suspend fun setAutoCaptureEnabled(enabled: Boolean) {}
+        override val themeMode: Flow<String> = MutableStateFlow(ThemeMode.AUTO)
+        override suspend fun setThemeMode(mode: String) = Unit
     }
 
     private class Recorder {

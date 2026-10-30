@@ -166,6 +166,64 @@ class DocumentsRepository(
         )
     }
 
+    /**
+     * Re-crops the page from its source (kept original, or the stored page
+     * when no original survives) with a user-supplied quad in source pixel
+     * coordinates. The stored page file is replaced by the new crop and the
+     * user corner set is remembered. When no original is kept, the older
+     * auto/refined sets — which refer to the lost original frame — are
+     * dropped so nothing refers to a coordinate space that no longer exists.
+     */
+    suspend fun cropPageWithCorners(
+        pageId: Long,
+        quad: FloatArray,
+        sourceWidth: Int,
+        sourceHeight: Int,
+    ) = withContext(Dispatchers.IO) {
+        val page = dao.getPage(pageId) ?: error("Page not found")
+        val original = files.originalFile(page.documentId, pageId).takeIf { it.exists() }
+        val sourceFile = original ?: java.io.File(page.filePath)
+        // Full-resolution decode: the crop target is the stored page size.
+        val source = io.github.enricof64.scan.Images.decodeScaled(sourceFile, CROP_MAX_DIM)
+            ?: error("Cannot decode source image")
+        try {
+            val warped = io.github.enricof64.scan.ScanPipeline.crop(source, quad)
+            val dest = files.pageFile(page.documentId)
+            io.github.enricof64.scan.Images.saveJpeg(warped, dest)
+            if (warped !== source) warped.recycle()
+            source.recycle()
+            dao.setPageFile(pageId, dest.absolutePath)
+            files.deletePageFile(page.filePath)
+            val keepOldSets = original != null
+            dao.setPageCorners(
+                id = pageId,
+                auto = if (keepOldSets) page.autoCorners else null,
+                refined = if (keepOldSets) page.refinedCorners else null,
+                user = io.github.enricof64.scan.PageCorners.encode(quad),
+                schema = cornerSchemaFor(
+                    if (keepOldSets) io.github.enricof64.scan.PageCorners.decode(page.autoCorners) else null,
+                    if (keepOldSets) io.github.enricof64.scan.PageCorners.decode(page.refinedCorners) else null,
+                    quad,
+                ),
+                width = sourceWidth,
+                height = sourceHeight,
+            )
+            dao.setNeedsCheck(pageId, false)
+        } catch (t: Throwable) {
+            runCatching { source.recycle() }
+            throw t
+        }
+    }
+
+    /**
+     * The file a manual re-crop starts from: the kept original frame when it
+     * exists, otherwise the stored page itself.
+     */
+    suspend fun cornerEditSource(page: PageEntity): java.io.File {
+        val original = files.originalFile(page.documentId, page.id).takeIf { it.exists() }
+        return original ?: java.io.File(page.filePath)
+    }
+
     suspend fun setPageFilter(pageId: Long, filterId: String?) {
         dao.setPageFilter(pageId, filterId)
     }
@@ -247,6 +305,9 @@ class DocumentsRepository(
     }
 
     companion object {
+        /** Longest edge kept for the manual re-crop decode (device RAM-safe). */
+        private const val CROP_MAX_DIM = 6000
+
         fun defaultTitle(): String =
             SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date())
 

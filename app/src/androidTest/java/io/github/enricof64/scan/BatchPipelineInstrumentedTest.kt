@@ -20,6 +20,7 @@ import io.github.enricof64.scan.Images
 import io.github.enricof64.scan.JpegExporter
 import io.github.enricof64.scan.PageImporter
 import io.github.enricof64.scan.PdfExporter
+import io.github.enricof64.scan.ui.theme.ThemeMode
 import java.io.File
 import java.util.zip.ZipFile
 import kotlin.math.abs
@@ -74,6 +75,8 @@ class BatchPipelineInstrumentedTest {
                 override suspend fun setFilterDefault(filterId: String) {}
                 override val autoCaptureEnabled = MutableStateFlow(false)
                 override suspend fun setAutoCaptureEnabled(enabled: Boolean) {}
+                override val themeMode = MutableStateFlow(ThemeMode.AUTO)
+                override suspend fun setThemeMode(mode: String) = Unit
             },
             appVersion = "test",
             doUpload = { _, _, _ -> },

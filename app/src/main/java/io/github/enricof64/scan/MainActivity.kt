@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -21,20 +23,25 @@ import io.github.enricof64.scan.ui.DocumentViewModel
 import io.github.enricof64.scan.ui.DocumentsScreen
 import io.github.enricof64.scan.ui.DocumentsViewModel
 import io.github.enricof64.scan.ui.EditScreen
+import io.github.enricof64.scan.ui.ExportScreen
+import io.github.enricof64.scan.ui.ExportViewModel
 import io.github.enricof64.scan.ui.EditViewModel
 import io.github.enricof64.scan.ui.SettingsScreen
 import io.github.enricof64.scan.ui.SettingsViewModel
 import io.github.enricof64.scan.ui.theme.OpenScanTheme
+import io.github.enricof64.scan.ui.theme.ThemeMode
 
 object Routes {
     const val DOCUMENTS = "documents"
     const val CAPTURE = "capture?documentId={documentId}&gallery={gallery}"
     const val DOCUMENT = "document/{documentId}"
+    const val EXPORT = "export/{documentId}"
     const val EDIT = "edit/{pageId}"
     const val SETTINGS = "settings"
     const val CAMERA_DIAGNOSTICS = "camera_diagnostics"
 
     fun document(id: Long) = "document/$id"
+    fun export(id: Long) = "export/$id"
     fun edit(id: Long) = "edit/$id"
 
     /**
@@ -61,7 +68,10 @@ class MainActivity : ComponentActivity() {
         // Flush due developer-share uploads (queued while offline or dead).
         container.repository.flushUploads()
         setContent {
-            OpenScanTheme {
+            // Read inside the composition so the scheme switches live when
+            // the user changes the override in settings.
+            val themeMode by container.settings.themeMode.collectAsState(initial = ThemeMode.AUTO)
+            OpenScanTheme(themeMode = themeMode) {
                 OpenScanNavHost(container)
             }
         }
@@ -148,6 +158,23 @@ fun OpenScanNavHost(container: AppContainer) {
                 },
                 onEditPage = { pageId -> navController.navigate(Routes.edit(pageId)) },
                 onAddPages = { navController.navigate(Routes.capture(documentId)) },
+                onExport = { navController.navigate(Routes.export(documentId)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            Routes.EXPORT,
+            arguments = listOf(navArgument("documentId") { type = NavType.LongType }),
+        ) { entry ->
+            val documentId = entry.arguments?.getLong("documentId") ?: return@composable
+            ExportScreen(
+                viewModel = viewModel(key = "export-$documentId") {
+                    ExportViewModel(
+                        documentId, container.repository, container.files,
+                        container.settings, appContext,
+                    )
+                },
                 onBack = { navController.popBackStack() },
             )
         }
