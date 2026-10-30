@@ -11,10 +11,11 @@ import kotlin.math.roundToInt
  * pixels in and out of [Bitmap]s.
  *
  * Filters:
- * - DOCUMENT: illumination normalization (gain from a blurred background
- *   estimate, color-preserving per-channel) + uniform contrast stretch +
- *   mild 3×3 unsharp mask on luminance (item 10). White background, crisp
- *   dark text; stamps stay readable because hue is never touched.
+ * - DOCUMENT: illumination normalization (per-channel gain from a blurred
+ *   background estimate — removes shadows AND the paper's color cast,
+ *   plan §8 items 3-4) + uniform contrast stretch + mild 3×3 unsharp mask
+ *   on luminance (item 10). White neutral background, crisp dark text;
+ *   saturated stamps survive because only the background level moves.
  * - BLACK_WHITE: same normalization, then a fixed threshold.
  * - GRAYSCALE: luminance only.
  * - ORIGINAL: untouched.
@@ -26,6 +27,9 @@ object FilterPixels {
 
     /** Max gain applied by normalization (avoids blowing out dark scenes). */
     const val MAX_GAIN = 3.2f
+
+    /** Min gain applied by normalization (avoids crushing bright channels). */
+    const val MIN_GAIN = 0.35f
 
     /** Fixed threshold for BLACK_WHITE after normalization. */
     const val BW_THRESHOLD = 150
@@ -68,54 +72,70 @@ object FilterPixels {
     }
 
     /**
-     * Illumination normalization: per-pixel gain from a blurred background
-     * estimate, applied to all channels equally (hue-preserving).
+     * Illumination normalization + white balance (plan §8 items 3-4):
+     * per-pixel, per-channel gain from a blurred background estimate. Each
+     * channel's paper background is driven to the same neutral [BG_TARGET],
+     * which removes both the illumination gradient (shadows) and the color
+     * cast of the lighting (white balance).
      */
     fun normalize(pixels: IntArray, width: Int, height: Int): IntArray {
         require(pixels.size == width * height) { "pixels ${pixels.size} != ${width}x$height" }
-        val gains = backgroundGains(pixels, width, height)
+        val bg = channelBackgrounds(pixels, width, height)
         return IntArray(pixels.size) { i ->
-            val g = gains[i]
-            if (g == 1f) {
+            val x = i % width
+            val y = i / width
+            val gx = (x + 0.5f) * bg.sw / width - 0.5f
+            val gy = (y + 0.5f) * bg.sh / height - 0.5f
+            val gR = gainAt(bg.r, bg.sw, bg.sh, gx, gy)
+            val gG = gainAt(bg.g, bg.sw, bg.sh, gx, gy)
+            val gB = gainAt(bg.b, bg.sw, bg.sh, gx, gy)
+            if (gR == 1f && gG == 1f && gB == 1f) {
                 pixels[i]
             } else {
                 argb(
                     255,
-                    (red(pixels[i]) * g).roundToInt().coerceIn(0, 255),
-                    (green(pixels[i]) * g).roundToInt().coerceIn(0, 255),
-                    (blue(pixels[i]) * g).roundToInt().coerceIn(0, 255),
+                    (red(pixels[i]) * gR).roundToInt().coerceIn(0, 255),
+                    (green(pixels[i]) * gG).roundToInt().coerceIn(0, 255),
+                    (blue(pixels[i]) * gB).roundToInt().coerceIn(0, 255),
                 )
             }
         }
     }
 
+    /** Small per-channel blurred background estimate (visible for tests). */
+    data class ChannelBackgrounds(val r: IntArray, val g: IntArray, val b: IntArray,
+                                  val sw: Int, val sh: Int)
+
     /**
-     * Full-resolution gain map from a small blurred background copy:
-     * bg is the box-blurred luminance, gain = BG_TARGET / bg clamped to
-     * [1, MAX_GAIN], upsampled bilinearly. Visible for tests.
+     * Per-channel background: box-downscale each channel to [BG_MAX_DIM],
+     * box-blur with a wide radius. The gain is then sampled bilinearly per
+     * pixel — no full-resolution gain map is ever allocated.
      */
-    fun backgroundGains(pixels: IntArray, width: Int, height: Int): FloatArray {
+    fun channelBackgrounds(pixels: IntArray, width: Int, height: Int): ChannelBackgrounds {
         val scale = min(1f, BG_MAX_DIM.toFloat() / max(width, height))
         val sw = max(1, (width * scale).roundToInt())
         val sh = max(1, (height * scale).roundToInt())
-        val small = boxDownscaleGray(pixels, width, height, sw, sh)
         val radius = max(4, min(sw, sh) / 8)
-        val blurred = boxBlur(small, sw, sh, radius)
-        val smallGains = FloatArray(sw * sh) { i ->
-            (BG_TARGET.toFloat() / max(blurred[i], 1)).coerceIn(1f, MAX_GAIN)
-        }
-        // Bilinear upscale to full resolution.
-        return FloatArray(width * height) { i ->
-            val x = i % width
-            val y = i / width
-            val gx = (x + 0.5f) * sw / width - 0.5f
-            val gy = (y + 0.5f) * sh / height - 0.5f
-            bilinear(smallGains, sw, sh, gx, gy)
-        }
+        return ChannelBackgrounds(
+            boxBlur(boxDownscaleChannel(pixels, width, height, sw, sh) { red(it) }, sw, sh, radius),
+            boxBlur(boxDownscaleChannel(pixels, width, height, sw, sh) { green(it) }, sw, sh, radius),
+            boxBlur(boxDownscaleChannel(pixels, width, height, sw, sh) { blue(it) }, sw, sh, radius),
+            sw,
+            sh,
+        )
     }
 
-    /** Box-average downscale to a gray image. */
-    fun boxDownscaleGray(pixels: IntArray, w: Int, h: Int, sw: Int, sh: Int): IntArray {
+    /** Per-pixel gain for one channel's background field (bilinear sample). */
+    fun gainAt(bg: IntArray, sw: Int, sh: Int, gx: Float, gy: Float): Float {
+        val bgAt = bilinear(bg, sw, sh, gx, gy)
+        return (BG_TARGET.toFloat() / max(bgAt, 1f)).coerceIn(MIN_GAIN, MAX_GAIN)
+    }
+
+    /** Box-average downscale of one channel. */
+    private fun boxDownscaleChannel(
+        pixels: IntArray, w: Int, h: Int, sw: Int, sh: Int,
+        channel: (Int) -> Int,
+    ): IntArray {
         val out = IntArray(sw * sh)
         for (sy in 0 until sh) {
             val y0 = (sy * h / sh)
@@ -127,7 +147,7 @@ object FilterPixels {
                 var n = 0
                 for (y in y0 until min(y1, h)) {
                     for (x in x0 until min(x1, w)) {
-                        sum += luminance(pixels[y * w + x])
+                        sum += channel(pixels[y * w + x])
                         n++
                     }
                 }
@@ -136,6 +156,10 @@ object FilterPixels {
         }
         return out
     }
+
+    /** Box-average downscale to a gray image (kept for tests). */
+    fun boxDownscaleGray(pixels: IntArray, w: Int, h: Int, sw: Int, sh: Int): IntArray =
+        boxDownscaleChannel(pixels, w, h, sw, sh) { luminance(it) }
 
     /** Separable box blur on a gray image via integral image (small inputs). */
     fun boxBlur(gray: IntArray, w: Int, h: Int, radius: Int): IntArray {
@@ -166,7 +190,7 @@ object FilterPixels {
         }
     }
 
-    private fun bilinear(field: FloatArray, w: Int, h: Int, x: Float, y: Float): Float {
+    private fun bilinear(field: IntArray, w: Int, h: Int, x: Float, y: Float): Float {
         val x0 = x.toInt().coerceIn(0, w - 1)
         val y0 = y.toInt().coerceIn(0, h - 1)
         val x1 = min(x0 + 1, w - 1)

@@ -1,6 +1,7 @@
 package io.github.enricof64.scan
 
 import io.github.enricof64.scan.FilterPixels
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,6 +57,50 @@ class FilterPixelsTest {
         val seal = out[10 * w + 10]
         assertTrue("red stays dominant: $seal", FilterPixels.red(seal) > FilterPixels.green(seal) + 30)
         assertTrue("red stays dominant over blue", FilterPixels.red(seal) > FilterPixels.blue(seal) + 30)
+    }
+
+    /** Page with a uniform color-cast paper (no shading) and dark text columns. */
+    private fun castPage(w: Int = 80, h: Int = 60, paper: Int): IntArray {
+        val pixels = IntArray(w * h) { paper }
+        for (x in 0 until w) {
+            if (x % 12 < 2) {
+                for (y in 0 until h) {
+                    pixels[y * w + x] = FilterPixels.argb(255, 40, 40, 40)
+                }
+            }
+        }
+        return pixels
+    }
+
+    @Test
+    fun `document mode removes a warm color cast`() {
+        val w = 80
+        val h = 60
+        val warm = FilterPixels.argb(255, 200, 190, 160)
+        val out = FilterPixels.applyDocument(castPage(w, h, warm), w, h)
+        // Sample paper away from the text columns.
+        val p = out[10 * w + 8]
+        val r = FilterPixels.red(p)
+        val g = FilterPixels.green(p)
+        val b = FilterPixels.blue(p)
+        assertTrue("warm paper $p should whiten past 200", FilterPixels.luminance(p) > 200)
+        val cast = maxOf(abs(r - g), abs(g - b), abs(r - b))
+        assertTrue("paper channels ($r,$g,$b) should be near-neutral, cast $cast", cast <= 12)
+    }
+
+    @Test
+    fun `document mode removes a cool color cast`() {
+        val w = 80
+        val h = 60
+        val cool = FilterPixels.argb(255, 160, 185, 205)
+        val out = FilterPixels.applyDocument(castPage(w, h, cool), w, h)
+        val p = out[10 * w + 8]
+        val r = FilterPixels.red(p)
+        val g = FilterPixels.green(p)
+        val b = FilterPixels.blue(p)
+        assertTrue("cool paper $p should whiten past 200", FilterPixels.luminance(p) > 200)
+        val cast = maxOf(abs(r - g), abs(g - b), abs(r - b))
+        assertTrue("paper channels ($r,$g,$b) should be near-neutral, cast $cast", cast <= 12)
     }
 
     @Test
