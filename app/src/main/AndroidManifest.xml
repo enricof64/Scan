@@ -3,20 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      Permission model:
-      - The ML Kit document scanner runs inside Google Play services, which
-        performs the capture itself, so no CAMERA permission is required.
-      - ML Kit text recognition ships with the bundled model, so it is fully
-        on-device.
+      Permission model (single `foss` flavor; no Play services, no ML Kit):
+      - CAMERA is declared by the foss flavor itself (app/src/foss)
+        because capture is our own CameraX + OpenCV pipeline.
       - INTERNET backs exactly one optional, OFF-BY-DEFAULT feature: users
         who tick "Send pictures to our servers so we can use them to improve
         our application" in Settings allow saved scan pages to be uploaded
         (fire-and-forget, never queued, never retried; see FeedbackUploader).
         With the toggle off nothing is ever transmitted and the app works
         fully offline.
-      - Google's transitive libraries (Firebase data transport telemetry
-        pulled in by ML Kit) merge ACCESS_NETWORK_STATE into every app that
-        uses them. OpenScan explicitly REMOVES it. The only other
+      - ACCESS_NETWORK_STATE is explicitly REMOVEd: no bundled Google
+        libraries are shipped any more, but the removal stays as defense
+        against a future transitive dependency re-adding it. The only other
         uses-permission in the merged manifest is the package-scoped
         DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION that AndroidX generates; it
         grants no access to anything.

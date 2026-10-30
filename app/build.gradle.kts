@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.alexeygrigorev.openscan"
+    namespace = "io.github.enricof64.scan"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.alexeygrigorev.openscan"
+        applicationId = "io.github.enricof64.scan"
         minSdk = 26
         targetSdk = 36
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
@@ -35,9 +35,9 @@ android {
             "\"${telemetryConfigValue("OPENSCAN_TELEMETRY_UPLOAD_TOKEN")}\"",
         )
 
-        // OpenCV and the ML Kit OCR pipeline ship x86/x86_64 libs for
-        // emulators; packaged on a real-device APK they triple its size
-        // (~170MB native across four ABIs vs ~55MB on the two ARM ABIs).
+        // OpenCV ships x86/x86_64 libs for emulators; packaged on a
+        // real-device APK they triple its size (~170MB native across four
+        // ABIs vs ~55MB on the two ARM ABIs).
         // Every phone that can run this app is arm64 or armv7.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -61,17 +61,13 @@ android {
         }
     }
 
-    // Distribution flavors (docs/FEATURES.md, product rule 3 — zero permission
-    // creep): `play` keeps capture inside Google Play services' ML Kit
-    // document scanner and never gains the CAMERA permission; `foss` swaps
-    // capture for our own CameraX + OpenCV batch pipeline (app/src/foss) and
-    // is the flavor F-Droid / de-Googled devices get. Everything else —
-    // library, editing, OCR, exports, telemetry toggle — is shared main code.
+    // Single distribution flavor (fork cut, docs/FEATURES.md): `foss` — our
+    // own CameraX + OpenCV batch pipeline (app/src/foss), no Play services,
+    // no ML Kit, no bundled Google modules. Everything else — library,
+    // editing, exports, telemetry toggle — is shared main code. Local OCR is
+    // stubbed out until the OCR phases land (server OCR, then PaddleOCR).
     flavorDimensions += "distribution"
     productFlavors {
-        create("play") {
-            dimension = "distribution"
-        }
         create("foss") {
             dimension = "distribution"
             versionNameSuffix = "-foss"
@@ -152,16 +148,13 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
 
-    // Capture is flavor-specific: GMS scanner on play (no CAMERA permission),
-    // CameraX own pipeline on foss. OCR (bundled, offline) and everything else
-    // stay in main for both. Quoted configuration names: flavor accessors
+    // Capture lives in the foss flavor (CameraX own pipeline); everything
+    // else stays in main. Quoted configuration names: flavor accessors
     // don't exist at script-compile time in the Kotlin DSL.
-    "playImplementation"(libs.mlkit.document.scanner)
     "fossImplementation"(libs.androidx.camera.core)
     "fossImplementation"(libs.androidx.camera.camera2)
     "fossImplementation"(libs.androidx.camera.lifecycle)
     "fossImplementation"(libs.androidx.camera.view)
-    implementation(libs.mlkit.text.recognition)
     implementation(libs.pdfbox.android)
     implementation(libs.opencv)
 

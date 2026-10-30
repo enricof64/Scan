@@ -14,7 +14,7 @@ run can measure the production detector**. The app itself degrades gracefully
 This evaluation measures the **pipeline geometry** — decode → detect
 quad → perspective crop → `PdfExporter.exportPdf` — with an OpenCV
 detector. When the v3 benchmark ran, that detector was `androidTest`-only;
-it has since been promoted into the app as [`ScanPipeline.kt`](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt)
+it has since been promoted into the app as [`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)
 and upgraded to **detector v8** — see the [v8 section](#detector-v8-ported-into-scanpipeline--on-device-re-run-2026-10-03-evening)
 below (the CameraX capture flow itself still prefers ML Kit on Play-services
 devices, which should be spot-checked once on a real phone).
@@ -97,10 +97,10 @@ failure).
 ```bash
 adb push <images> /data/local/tmp/openscan-eval/images/
 adb push index.json /data/local/tmp/openscan-eval/
-adb shell am instrument -w -e class io.github.alexeygrigorev.openscan.\
-DocumentEvalBenchmark io.github.alexeygrigorev.openscan.test/\
+adb shell am instrument -w -e class io.github.enricof64.scan.\
+DocumentEvalBenchmark io.github.enricof64.scan.test/\
 androidx.test.runner.AndroidJUnitRunner
-adb pull /data/data/io.github.alexeygrigorev.openscan/files/eval out/
+adb pull /data/data/io.github.enricof64.scan/files/eval out/
 ```
 
 ## Verdict
@@ -211,7 +211,7 @@ end-to-end. No watermarks on any seen page. Notes:
 <!-- review-2026-10-03b -->
 ## Detector v8 ported into ScanPipeline + on-device re-run (2026-10-03, evening)
 
-The test-only detector inside [`ScanPipeline.kt`](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt)
+The test-only detector inside [`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)
 was replaced with **detector v8**, tuned offline (95-photo corpus + MIDV ground truth in a
 Python twin, `/tmp/openscan-pyquad`) and ported 1:1 to Kotlin/OpenCV. Beyond the v3 recipe
 it adds: a 4th Canny pass on CLAHE-normalized gray, dual paperness floors (crisp-edge quads
@@ -251,7 +251,7 @@ equivalent within noise; sample overlays:
 ## Detector v9 (v13 corner fix + guards) + clean-corpus on-device run (2026-10-03, night)
 
 **Detector change (v8 → v9).** Four fixes, offline-validated in the Python twin and ported
-1:1 to [`ScanPipeline.kt`](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt):
+1:1 to [`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt):
 
 1. **`fitLine` output read as CV_32F** (it is not CV_64F) and **`lineIsect` endpoint
    order fixed** — corner rays now extend in the right direction, so line-fit refinement
@@ -291,7 +291,7 @@ score 0 by construction.
 
 **Detector change (v9 → v17).** Offline-validated in the Python twin (`improved_v17`,
 runs under `/tmp/openscan-pyquad-j79/`) and ported 1:1 to
-[`ScanPipeline.kt`](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt):
+[`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt):
 
 1. **Thin-band inner guard** — an inner-switch candidate whose bbox min-dimension is
    < 25 % of the frame's is a read of ruled lines / a text block, not a nested document

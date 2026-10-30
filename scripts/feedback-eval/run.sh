@@ -135,7 +135,7 @@ unzip -tq "$APP" >/dev/null && unzip -tq "$TEST_APP" >/dev/null
 echo "== installing"
 "$ADB" -s "$DEVICE" install -r -t "$APP" | tail -1
 "$ADB" -s "$DEVICE" install -r -t "$TEST_APP" | tail -1
-PKG=io.github.alexeygrigorev.openscan
+PKG=io.github.enricof64.scan
 
 echo "== pushing photos"
 "$ADB" -s "$DEVICE" shell rm -rf /data/local/tmp/openscan-eval

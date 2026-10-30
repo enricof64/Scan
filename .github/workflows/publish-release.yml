@@ -16,9 +16,9 @@ name: Publish release
 # Run it with:  gh workflow run publish-release.yml --ref main -f release_tag=vX.Y.Z
 # See docs/RELEASING.md.
 #
-# Foss-only for now: GitHub releases carry exactly one sideloadable artifact
-# (the signed foss release APK). Play-flavor distribution — the .aab, Play
-# Console, a play update path — is deferred, tracked in issue #2.
+# Foss-only: GitHub releases carry exactly one sideloadable artifact (the
+# signed foss release APK). The play flavor (GMS document scanner) was cut
+# from this fork; there is no Play distribution.
 
 on:
   workflow_dispatch:

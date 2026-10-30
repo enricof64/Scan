@@ -43,7 +43,7 @@ current status.
 | E-signature (draw + place on page) | Limited free | P1 | ⏳ roadmap |
 | Search inside documents (OCR full-text) | Partial free | P1 | ⏳ roadmap (Room FTS over OCR text) |
 | Auto-capture (steady-frame snap) | Free | P1 | ✅ shipped (foss flavor: the viewfinder snaps when the OpenCV quad detector holds the document's corners steady for two frames after a cooldown; re-arms on page flip) |
-| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt); torch, manual Snap, Stop → review; play build unchanged, GMS scanner, zero permissions) |
+| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt); torch, manual Snap, Stop → review) |
 | ID card mode (both sides, one page) | Free-ish | P2 | ⏳ backlog |
 | Whiteboard / blackboard mode | Free | P2 | ⏳ backlog |
 | Annotation / markup (pen, highlight) | Basic free | P2 | ⏳ backlog |
@@ -54,7 +54,7 @@ current status.
 | QR / barcode scanning | Free | P2 | ⏳ backlog (ML Kit barcode) |
 | Low-light / night enhancement | Partially premium | P2 | ⏳ backlog |
 | Optional user-configured sync (WebDAV / Nextcloud / Paperless-ngx) | Cloud-tied (their cloud) | P2 | ⏳ backlog — self-hosted push, never a OpenScan account |
-| F-Droid flavor (own CameraX+OpenCV pipeline) | n/a | P2 | ✅ shipped (`foss` flavor: the only build declaring CAMERA, in its own manifest — app/src/foss/AndroidManifest.xml; no GMS document-scanner dependency) |
+| F-Droid flavor (own CameraX+OpenCV pipeline) | n/a | P2 | ✅ shipped (`foss` flavor, the only flavor in this fork: the only build declaring CAMERA, in its own manifest — app/src/foss/AndroidManifest.xml; no GMS document-scanner dependency, no ML Kit, no Play services) |
 | PDF → Word/Excel conversion | Premium (cloud) | Skip | ❌ server-bound |
 | Fax | Paid credits | Skip | ❌ |
 | Cloud account + sync (a OpenScan cloud) | ~200–400 MB free | Skip | ❌ no accounts, ever |
@@ -65,17 +65,20 @@ current status.
 
 1. **Never a watermark.** Exported PDFs and images are clean, always. There is
    one tier and it is free.
-2. **No ads, no tracking, no account.** OpenScan ships no analytics or crash
-   SDKs, and Google's library telemetry stays stripped (`ACCESS_NETWORK_STATE`
-   is removed from the merged manifest). The app declares `INTERNET` for
+2. **No ads, no tracking, no account.** The app ships no analytics or crash
+   SDKs, and no bundled Google libraries at all (the `foss` cut removed
+   ML Kit / Play services); `ACCESS_NETWORK_STATE` is still explicitly
+   removed from the merged manifest as defense in depth. The app declares
+   `INTERNET` for
    exactly one feature: the **off-by-default** "send pictures to our servers"
    toggle, which uploads scan pages only while enabled (fire-and-forget, no
    retries, no identifiers). With the toggle off nothing ever leaves the
    device. Any further networked feature must go through a public issue and
    stay optional + off by default.
-3. **Zero permission creep.** No camera, storage, contacts, or location in the
-   Play build — ever. If the own-pipeline F-Droid flavor lands, it adds
-   `CAMERA` and nothing else, in its own flavor.
+3. **Zero permission creep.** The app declares `CAMERA` (needed by the
+   own-pipeline capture, declared in the foss flavor's own manifest)
+   and `INTERNET` (the off-by-default upload) — and nothing else: no
+   storage, no contacts, no location, no background activity.
 4. **On-device processing by default.** Scans of passports, IDs, and contracts
    never leave the phone unless the user turns on the off-by-default
    scan-sharing toggle — and even then pages are used solely to improve
