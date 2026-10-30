@@ -94,8 +94,7 @@ fun releaseVersionLabel(versionName: String): String {
 /**
  * Pick the APK for this build flavour: an `openscan…-debug.apk` for a debug
  * install, `…-release.apk` (today: `…-foss-release.apk`, the only flavour
- * published) for a release install; else the first APK. When the play flavour
- * returns to the release page this needs flavour matching — see issue #2.
+ * published) for a release install; else the first APK.
  */
 fun pickApkAsset(assets: List<ReleaseAsset>, preferRelease: Boolean): String? {
     var firstApk: String? = null
@@ -220,7 +219,7 @@ class ReleaseChecker(
         private const val TAG = "ReleaseChecker"
 
         /** This app's release feed on GitHub. */
-        const val RELEASES_API = "https://api.github.com/repos/alexeygrigorev/openscan/releases/latest"
+        const val RELEASES_API = "https://api.github.com/repos/enricof64/Scan/releases/latest"
 
         private const val TIMEOUT_MS = 10_000
 

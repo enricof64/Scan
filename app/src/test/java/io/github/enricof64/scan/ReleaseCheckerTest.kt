@@ -45,12 +45,12 @@ class ReleaseCheckerTest {
 
     private fun latestReleaseBody(
         tag: String = "v0.2.0",
-        htmlUrl: String = "https://github.com/alexeygrigorev/openscan/releases/tag/$tag",
+        htmlUrl: String = "https://github.com/enricof64/Scan/releases/tag/$tag",
         assets: String = """
             {"name": "openscan-0.2.0-debug.apk",
-             "browser_download_url": "https://github.com/alexeygrigorev/openscan/releases/download/$tag/openscan-0.2.0-debug.apk"},
+             "browser_download_url": "https://github.com/enricof64/Scan/releases/download/$tag/openscan-0.2.0-debug.apk"},
             {"name": "openscan-0.2.0-release.apk",
-             "browser_download_url": "https://github.com/alexeygrigorev/openscan/releases/download/$tag/openscan-0.2.0-release.apk"}
+             "browser_download_url": "https://github.com/enricof64/Scan/releases/download/$tag/openscan-0.2.0-release.apk"}
         """.trimIndent(),
         publishedAt: String = "2026-10-02T17:37:36Z",
     ) = """
@@ -121,15 +121,15 @@ class ReleaseCheckerTest {
     private val assets = listOf(
         ReleaseAsset(
             "openscan-0.2.0-release.aab",
-            "https://github.com/alexeygrigorev/openscan/releases/download/v0.2.0/openscan-0.2.0-release.aab",
+            "https://github.com/enricof64/Scan/releases/download/v0.2.0/openscan-0.2.0-release.aab",
         ),
         ReleaseAsset(
             "openscan-0.2.0-debug.apk",
-            "https://github.com/alexeygrigorev/openscan/releases/download/v0.2.0/openscan-0.2.0-debug.apk",
+            "https://github.com/enricof64/Scan/releases/download/v0.2.0/openscan-0.2.0-debug.apk",
         ),
         ReleaseAsset(
             "openscan-0.2.0-release.apk",
-            "https://github.com/alexeygrigorev/openscan/releases/download/v0.2.0/openscan-0.2.0-release.apk",
+            "https://github.com/enricof64/Scan/releases/download/v0.2.0/openscan-0.2.0-release.apk",
         ),
     )
 
@@ -164,13 +164,13 @@ class ReleaseCheckerTest {
 
     @Test
     fun `only github https hosts are trusted`() {
-        assertTrue(isTrustedReleaseUrl("https://github.com/alexeygrigorev/openscan/releases/tag/v0.2.0"))
+        assertTrue(isTrustedReleaseUrl("https://github.com/enricof64/Scan/releases/tag/v0.2.0"))
         assertTrue(
             isTrustedReleaseUrl(
                 "https://release-assets.githubusercontent.com/github-production-release-asset/x",
             ),
         )
-        assertFalse(isTrustedReleaseUrl("http://github.com/alexeygrigorev/openscan/releases/tag/v0.2.0"))
+        assertFalse(isTrustedReleaseUrl("http://github.com/enricof64/Scan/releases/tag/v0.2.0"))
         assertFalse(isTrustedReleaseUrl("https://evil.example.com/openscan.apk"))
         assertFalse(isTrustedReleaseUrl("https://github.com.evil.example.com/openscan.apk"))
         assertFalse(isTrustedReleaseUrl("not a url"))
@@ -185,7 +185,7 @@ class ReleaseCheckerTest {
         assertEquals("v0.2.0", available.tagName)
         assertEquals(current, available.currentVersion)
         assertTrue(available.downloadUrl.endsWith("openscan-0.2.0-release.apk"))
-        assertEquals("https://github.com/alexeygrigorev/openscan/releases/tag/v0.2.0", available.notesUrl)
+        assertEquals("https://github.com/enricof64/Scan/releases/tag/v0.2.0", available.notesUrl)
         assertEquals("2026-10-02T17:37:36Z", available.publishedAt)
     }
 
@@ -224,7 +224,7 @@ class ReleaseCheckerTest {
         val body = latestReleaseBody(
             assets = """
                 {"name": "openscan-0.2.0-release.aab",
-                 "browser_download_url": "https://github.com/alexeygrigorev/openscan/releases/download/v0.2.0/openscan-0.2.0-release.aab"}
+                 "browser_download_url": "https://github.com/enricof64/Scan/releases/download/v0.2.0/openscan-0.2.0-release.aab"}
             """.trimIndent(),
         )
         val result = parseLatestRelease(body, current, preferReleaseApk = true)
@@ -275,7 +275,7 @@ class ReleaseCheckerTest {
     @Test
     fun `the endpoint is this repository's release feed`() {
         assertEquals(
-            "https://api.github.com/repos/alexeygrigorev/openscan/releases/latest",
+            "https://api.github.com/repos/enricof64/Scan/releases/latest",
             ReleaseChecker.RELEASES_API,
         )
         // The default fetch target must be a parseable URL.
