@@ -23,6 +23,8 @@ import io.github.enricof64.scan.ui.DocumentViewModel
 import io.github.enricof64.scan.ui.DocumentsScreen
 import io.github.enricof64.scan.ui.DocumentsViewModel
 import io.github.enricof64.scan.ui.EditScreen
+import io.github.enricof64.scan.ui.ExportScreen
+import io.github.enricof64.scan.ui.ExportViewModel
 import io.github.enricof64.scan.ui.EditViewModel
 import io.github.enricof64.scan.ui.SettingsScreen
 import io.github.enricof64.scan.ui.SettingsViewModel
@@ -33,11 +35,13 @@ object Routes {
     const val DOCUMENTS = "documents"
     const val CAPTURE = "capture?documentId={documentId}&gallery={gallery}"
     const val DOCUMENT = "document/{documentId}"
+    const val EXPORT = "export/{documentId}"
     const val EDIT = "edit/{pageId}"
     const val SETTINGS = "settings"
     const val CAMERA_DIAGNOSTICS = "camera_diagnostics"
 
     fun document(id: Long) = "document/$id"
+    fun export(id: Long) = "export/$id"
     fun edit(id: Long) = "edit/$id"
 
     /**
@@ -154,6 +158,23 @@ fun OpenScanNavHost(container: AppContainer) {
                 },
                 onEditPage = { pageId -> navController.navigate(Routes.edit(pageId)) },
                 onAddPages = { navController.navigate(Routes.capture(documentId)) },
+                onExport = { navController.navigate(Routes.export(documentId)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            Routes.EXPORT,
+            arguments = listOf(navArgument("documentId") { type = NavType.LongType }),
+        ) { entry ->
+            val documentId = entry.arguments?.getLong("documentId") ?: return@composable
+            ExportScreen(
+                viewModel = viewModel(key = "export-$documentId") {
+                    ExportViewModel(
+                        documentId, container.repository, container.files,
+                        container.settings, appContext,
+                    )
+                },
                 onBack = { navController.popBackStack() },
             )
         }

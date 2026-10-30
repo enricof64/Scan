@@ -5,8 +5,6 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,12 +24,11 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.RotateRight
-import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,10 +74,8 @@ import io.github.enricof64.scan.data.PageEntity
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.DebugArchive
 import io.github.enricof64.scan.Images
-import io.github.enricof64.scan.JpegExporter
 import io.github.enricof64.scan.PageCorners
 import io.github.enricof64.scan.PageOcr
-import io.github.enricof64.scan.PdfExporter
 import io.github.enricof64.scan.ScanFilter
 import io.github.enricof64.scan.ScanFilters
 import io.github.enricof64.scan.util.formatBatchImportSummary
@@ -130,10 +125,7 @@ class DocumentViewModel(
     val exporting = MutableStateFlow(false)
     val exportError = MutableStateFlow<String?>(null)
 
-    /** A finished PDF waiting for the user to pick Share/Print/Open/Save. */
-    val exportReady = MutableStateFlow<File?>(null)
-
-    /** Explicit share handoff (Share button / debug-archive export). */
+    /** Explicit share handoff (debug-archive export). */
     val shareRequest = MutableStateFlow<ShareRequest?>(null)
 
     /** One-shot snackbar notices (saved-to path, archive queued, …). */
@@ -185,48 +177,12 @@ class DocumentViewModel(
         exportError.value = null
     }
 
-    fun dismissExportReady() {
-        exportReady.value = null
-    }
-
     fun consumeShareRequest() {
         shareRequest.value = null
     }
 
     fun consumeNotice() {
         notice.value = null
-    }
-
-    /** Effective enhancement filter for every page (item 6). */
-    suspend fun effectiveFilters(): List<ScanFilter> {
-        val doc = repository.getDocument(documentId)
-        val default = settings.filterDefault.first()
-        return repository.getPages(documentId).map { page ->
-            ScanFilter.effective(page.filter, doc?.filter, default)
-        }
-    }
-
-    /** Renders every page into one enhanced PDF, then offers the actions. */
-    fun exportPdf() {
-        if (exporting.value) return
-        exporting.value = true
-        exportError.value = null
-        viewModelScope.launch {
-            try {
-                val title = document.value?.title ?: DocumentsRepository.defaultTitle()
-                val pageFiles = collectPageFiles()
-                val filters = effectiveFilters()
-                val out = files.sharedPdfFile(title)
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(out).use { stream -> PdfExporter.exportPdf(pageFiles, filters, stream) }
-                }
-                exportReady.value = out
-            } catch (t: Throwable) {
-                exportError.value = t.message ?: "PDF export failed"
-            } finally {
-                exporting.value = false
-            }
-        }
     }
 
     /** Document enhancement (item 6); also remembered as the app default. */
@@ -345,62 +301,6 @@ class DocumentViewModel(
         return@withContext out
     }
 
-    /** Copies the ready PDF to the user's SAF destination; confirms inline. */
-    fun saveExportTo(destination: android.net.Uri) {
-        val source = exportReady.value ?: return
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    appContext.contentResolver.openOutputStream(destination)?.use { out ->
-                        source.inputStream().use { it.copyTo(out) }
-                    } ?: error("Could not open destination")
-                }
-                notice.value = "PDF saved (${formatFileSize(source)})."
-            } catch (t: Throwable) {
-                exportError.value = t.message ?: "Save failed"
-            }
-        }
-    }
-
-    /**
-     * Exports pages as JPEG images: the stored page file copied as-is for a
-     * single page, a zip of JPEGs for several. No re-encoding, no watermark.
-     */
-    fun exportJpegs() {
-        if (exporting.value) return
-        exporting.value = true
-        exportError.value = null
-        viewModelScope.launch {
-            try {
-                val title = document.value?.title ?: DocumentsRepository.defaultTitle()
-                val pageFiles = collectPageFiles()
-                if (pageFiles.size == 1) {
-                    val image = files.sharedImageFile(title)
-                    withContext(Dispatchers.IO) {
-                        JpegExporter.exportSingle(pageFiles.first(), FileOutputStream(image))
-                    }
-                    shareRequest.value = ShareRequest(image, "image/jpeg", "Share image")
-                } else {
-                    val zip = files.sharedZipFile(title)
-                    withContext(Dispatchers.IO) {
-                        JpegExporter.exportZip(pageFiles, FileOutputStream(zip))
-                    }
-                    shareRequest.value = ShareRequest(zip, "application/zip", "Share images")
-                }
-            } catch (t: Throwable) {
-                exportError.value = t.message ?: "JPEG export failed"
-            } finally {
-                exporting.value = false
-            }
-        }
-    }
-
-    private suspend fun collectPageFiles(): List<File> =
-        pages.value
-            .ifEmpty { repository.getPages(documentId) }
-            .map { File(it.filePath) }
-            .filter { it.exists() }
-            .ifEmpty { error("No pages to export") }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -409,13 +309,13 @@ fun DocumentScreen(
     viewModel: DocumentViewModel,
     onEditPage: (Long) -> Unit,
     onAddPages: () -> Unit,
+    onExport: () -> Unit,
     onBack: () -> Unit,
 ) {
     val document by viewModel.document.collectAsState()
     val pages by viewModel.pages.collectAsState()
     val exporting by viewModel.exporting.collectAsState()
     val exportError by viewModel.exportError.collectAsState()
-    val exportReady by viewModel.exportReady.collectAsState()
     val shareRequest by viewModel.shareRequest.collectAsState()
     val notice by viewModel.notice.collectAsState()
     val ocrText by viewModel.ocrText.collectAsState()
@@ -430,13 +330,6 @@ fun DocumentScreen(
     var reordering by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var filterPickerOpen by remember { mutableStateOf(false) }
-
-    // Storage-access save-as for the ready PDF (item 4).
-    val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        if (uri != null) viewModel.saveExportTo(uri)
-    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -466,17 +359,12 @@ fun DocumentScreen(
                         IconButton(onClick = onAddPages) {
                             Icon(Icons.Filled.AddPhotoAlternate, contentDescription = "Add pages")
                         }
+                        // Plan screen 5: the export lives on its own screen.
                         IconButton(
-                            onClick = { viewModel.exportPdf() },
+                            onClick = onExport,
                             enabled = !exporting && pages.isNotEmpty(),
                         ) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "Export PDF")
-                        }
-                        IconButton(
-                            onClick = { viewModel.exportJpegs() },
-                            enabled = !exporting && pages.isNotEmpty(),
-                        ) {
-                            Icon(Icons.Filled.Image, contentDescription = "Export images")
+                            Icon(Icons.Filled.Share, contentDescription = "Export")
                         }
                         Box {
                             IconButton(onClick = { menuOpen = true }) {
@@ -633,40 +521,6 @@ fun DocumentScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.consumeNotice()
         }
-    }
-
-    // The finished PDF and its actions (item 4): Share, Print, Open, Save.
-    exportReady?.let { pdf ->
-        val title = document?.title ?: DocumentsRepository.defaultTitle()
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissExportReady() },
-            title = { Text("PDF ready") },
-            text = { Text("${safeFileName(title)}.pdf — ${formatPageCount(pages.size)} (${formatFileSize(pdf)}).") },
-            confirmButton = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        viewModel.shareRequest.value =
-                            DocumentViewModel.ShareRequest(pdf, "application/pdf", "Share PDF")
-                    }) { Text("Share") }
-                    TextButton(onClick = {
-                        runCatching {
-                            PdfActions.print(context, pdf, safeFileName(title))
-                        }
-                    }) { Text("Print") }
-                    TextButton(onClick = {
-                        runCatching {
-                            PdfActions.openWith(context, pdf)
-                        }
-                    }) { Text("Open with…") }
-                    TextButton(onClick = {
-                        saveLauncher.launch("${safeFileName(title)}.pdf")
-                    }) { Text("Save") }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissExportReady() }) { Text("Close") }
-            },
-        )
     }
 
     if (filterPickerOpen) {
