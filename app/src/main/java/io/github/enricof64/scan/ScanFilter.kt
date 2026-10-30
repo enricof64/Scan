@@ -5,6 +5,7 @@ package io.github.enricof64.scan
  * on pages, documents and settings so persisted values survive renames.
  */
 enum class ScanFilter(val id: String, val title: String) {
+    AUTO("auto", "Auto"),
     DOCUMENT("document", "Document"),
     BLACK_WHITE("bw", "Black & white"),
     GRAYSCALE("gray", "Grayscale"),

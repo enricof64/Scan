@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import io.github.enricof64.scan.ScanFilter
 
 /**
- * Shared enhancement picker (items 6+7): the four filters, optionally with a
+ * Shared enhancement picker (items 6+7): the five filters, optionally with a
  * leading "Use default (…)" row that clears the override (null).
  */
 @Composable

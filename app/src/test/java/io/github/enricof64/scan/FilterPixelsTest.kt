@@ -130,6 +130,37 @@ class FilterPixelsTest {
         assertEquals(255 / 9, blurred[4])
     }
 
+    /** Page of paper (220) with dark ink columns [ink] px wide every [pitch] px. */
+    private fun inkPage(w: Int = 80, h: Int = 60, ink: Int, pitch: Int): IntArray {
+        val pixels = IntArray(w * h) { gray(220) }
+        for (x in 0 until w) {
+            if (x % pitch < ink) {
+                for (y in 0 until h) {
+                    pixels[y * w + x] = gray(30)
+                }
+            }
+        }
+        return pixels
+    }
+
+    @Test
+    fun `pickAuto chooses black-and-white for dense ink`() {
+        val dense = inkPage(ink = 3, pitch = 6) // ~50% ink
+        assertEquals(ScanFilter.BLACK_WHITE, FilterPixels.pickAuto(dense))
+    }
+
+    @Test
+    fun `pickAuto keeps document mode for sparse ink`() {
+        val sparse = inkPage(ink = 1, pitch = 25) // 5% ink
+        assertEquals(ScanFilter.DOCUMENT, FilterPixels.pickAuto(sparse))
+    }
+
+    @Test
+    fun `pickAuto keeps document mode without a bimodal split`() {
+        val flat = IntArray(200 * 200) { gray(150) }
+        assertEquals(ScanFilter.DOCUMENT, FilterPixels.pickAuto(flat))
+    }
+
     @Test
     fun `unsharp with zero amount is a copy`() {
         val pixels = shadedPage()

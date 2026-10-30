@@ -50,6 +50,33 @@ object FilterPixels {
         }
 
     /**
+     * Automatic filter choice (plan §8 item 6): stride-sample the luminance
+     * histogram, find the ink/paper split (midway between the 10th and 90th
+     * percentiles), and count ink. Dense-ink pages (filled forms, dense
+     * paragraphs) earn the small, crisp 1-bit output; anything sparse, or
+     * without a clean bimodal split, keeps the color-preserving Document
+     * mode. Pure JVM — no bitmap, no allocation beyond the sample list.
+     */
+    fun pickAuto(pixels: IntArray): ScanFilter {
+        val stride = max(1, pixels.size / 4096)
+        val samples = ArrayList<Int>(4096)
+        var i = 0
+        while (i < pixels.size) {
+            samples.add(luminance(pixels[i]))
+            i += stride
+        }
+        samples.sort()
+        val p10 = samples[(samples.size * 0.10).toInt().coerceIn(0, samples.size - 1)]
+        val p90 = samples[(samples.size * 0.90).toInt().coerceIn(0, samples.size - 1)]
+        if (p90 - p10 < 24) return ScanFilter.DOCUMENT // no clean bimodal split
+        val split = p10 + (p90 - p10) / 2
+        var ink = 0
+        for (s in samples) if (s < split) ink++
+        return if (ink >= samples.size * 0.20) ScanFilter.BLACK_WHITE
+        else ScanFilter.DOCUMENT
+    }
+
+    /**
      * Adaptive black-and-white: normalize illumination, then threshold.
      * Output pixels are pure black or white (opaque).
      */
