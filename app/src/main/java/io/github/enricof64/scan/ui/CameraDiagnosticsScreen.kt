@@ -51,7 +51,15 @@ fun CameraDiagnosticsScreen(onBack: () -> Unit) {
     var text by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         text = withContext(Dispatchers.IO) {
-            CameraDiagnostics.toText(CameraDiagnostics.collect(context))
+            // Throwable (not Exception): a binder OOM is an Error and must
+            // become a message on this screen, not a crashed app.
+            runCatching {
+                CameraDiagnostics.toText(CameraDiagnostics.collect(context))
+            }.getOrElse { t ->
+                "Camera diagnostics failed: " +
+                    t::class.java.simpleName +
+                    (if (t.message.isNullOrBlank()) "" else ": " + t.message)
+            }
         }
     }
 
