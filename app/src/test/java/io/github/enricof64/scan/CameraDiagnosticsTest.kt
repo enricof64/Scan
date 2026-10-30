@@ -32,6 +32,16 @@ class CameraDiagnosticsTest {
     }
 
     @Test
+    fun toTextStaysSmallForManyCameras() {
+        // Regression: a chained append(field(...)).append(value) used to append
+        // the StringBuilder to itself, doubling the buffer at every field.
+        // Four cameras must produce a tiny dump, not hundreds of MB.
+        val text = CameraDiagnostics.toText(List(4) { report.copy(id = it.toString()) })
+        assertTrue(text.length in 100..8_000)
+        assertTrue("Camera 3 (back)" in text)
+    }
+
+    @Test
     fun toTextRendersCameraErrorInsteadOfDetails() {
         val broken = report.copy(
             facing = "n/a",

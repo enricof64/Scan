@@ -1,8 +1,46 @@
 # 50 MP capture on the Galaxy Z Fold 8 — verification and Plan B (F0)
 
-Status: **verification tooling shipped, on-device reading pending (owner, ~2 min)**.
-Static analysis says Plan B is required; the in-app diagnostics confirm it on the
-device in one tap.
+Status: **verified on-device (Fold 8 / SM-F971B, Android SDK 37, 2026-10-30)**.
+
+## Verdict (on-device, 2026-10-30)
+
+**50 MP is NOT reachable from a third-party app on the Fold 8.** The public
+Camera2/CameraX ceiling is the default stream map, and on this device it caps
+at **12.5 MP (4080×3060)** — and the maximum-resolution map adds nothing:
+
+| camera | role | max JPEG (default map) | max-res map |
+| --- | --- | --- | --- |
+| 0 (back, 5.4 mm, 8.2×6.1 mm) | main 200 MP sensor | 4080×3060 (12.5 MP) | **not exposed** |
+| 2 (back, 2.2 mm, 5.7×4.3 mm) | ultrawide | 4080×3060 (12.5 MP) | exposed, but max 1920×1080 (2.1 MP) |
+| 1 (front) | wide self | 3648×2736 (10.0 MP) | not exposed |
+| 3 (front) | ultra-wide self | 2784×2080 (5.8 MP) | not exposed |
+
+Notes from the same dump:
+
+- `ULTRA_HIGH_RESOLUTION_SENSOR` is advertised (capability 16 in the platform
+  numbering — `RAW` is 3), yet the HAL still does not list any JPEG stream
+  larger than 12.5 MP. The 200 MP readout of the main sensor is a Samsung
+  proprietary capture mode, not exposed through the public Camera2 stream
+  configuration maps.
+- **CameraX already reaches the public ceiling** (12.5 MP = largest default-map
+  JPEG), so **Plan B (direct Camera2 + `SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION`
+  on the max-res map) would gain nothing on this device** and is not
+  implemented in F0/F1. If a future device exposes a larger max-res map, the
+  capture code can pick `max(default, maxRes)` cheaply — the diagnostics
+  screen still reports both so the decision stays evidence-based.
+- 12.5 MP is above the scanning quality target: A4 @ 300 DPI needs ≈ 8.7 MP
+  (2480×3508); 4080×3060 gives ≈ 350 DPI on A4.
+
+Consequence for the plan: the "50 MP" goal is dropped; the capture target
+becomes "largest JPEG in the default stream map" (12.5 MP on the Fold 8).
+
+---
+
+## Question (plan §7, F0)
+
+Are the full 50 MP of the Fold 8's main camera reachable from a third-party
+app — via Camera2 `SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION` /
+`ULTRA_HIGH_RESOLUTION_SENSOR` — or does CameraX cap us below that?
 
 ## Question (plan §7, F0)
 

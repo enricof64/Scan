@@ -73,7 +73,9 @@ object CameraDiagnostics {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, not Exception: a binder OOM is an Error and must
+            // become an error line, not a crash.
             listOf(
                 CameraReport(
                     id = "?", facing = "n/a", lensFacingLabel = "n/a",
@@ -123,6 +125,8 @@ object CameraDiagnostics {
             }
         }
 
+        // The named platform constant is 16 (REQUEST_AVAILABLE_CAPABILITIES_RAW
+        // is 3) — never hard-code the literal here.
         val ultraHigh = if (Build.VERSION.SDK_INT >= 34) {
             val caps: IntArray? = ch.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
             caps?.contains(
@@ -168,10 +172,17 @@ object CameraDiagnostics {
     private fun formatMm(value: Float): String =
         String.format(Locale.US, "%.1f", value)
 
-    private fun StringBuilder.field(label: String): StringBuilder {
+    /**
+     * Append a padded `label:` column. Deliberately returns Unit: this used to
+     * return the builder, and the chained call site
+     * `append(field("label")).append(value)` then appended the StringBuilder
+     * TO ITSELF — doubling the buffer at every field (×512 per camera, a
+     * multi-hundred-MB OOM crash on multi-lens phones). Use it as a plain
+     * statement and `append` the value in the next statement.
+     */
+    private fun StringBuilder.field(label: String) {
         append("  ")
         append((label + ":").padEnd(33))
-        return this
     }
 
     /** Human-readable dump (clipboard / logcat). */
@@ -184,29 +195,34 @@ object CameraDiagnostics {
             .append(Build.MODEL)
             .append(")\n")
         for (r in reports) {
-            append("Camera ").append(r.id).append(" (").append(r.lensFacingLabel).append(")\n")
+            append("Camera ")
+                .append(r.id)
+                .append(" (")
+                .append(r.lensFacingLabel)
+                .append(")\n")
             if (r.error != null) {
-                append(field("error")).append(r.error).append("\n\n")
+                field("error")
+                append(r.error).append("\n\n")
                 continue
             }
-            append(field("active array (default mode)"))
-                .append(r.defaultActiveArray).append('\n')
-            append(field("max JPEG via default map"))
-                .append(r.defaultMaxJpeg).append('\n')
-            append(field("max-res mode available (API 31)"))
-                .append(if (r.maxResAvailable) "yes" else "no").append('\n')
+            field("active array (default mode)")
+            append(r.defaultActiveArray).append('\n')
+            field("max JPEG via default map")
+            append(r.defaultMaxJpeg).append('\n')
+            field("max-res mode available (API 31)")
+            append(if (r.maxResAvailable) "yes" else "no").append('\n')
             if (r.maxResAvailable) {
-                append(field("active array (max-res mode)"))
-                    .append(r.maxResActiveArray ?: "n/a").append('\n')
-                append(field("max JPEG via max-res map"))
-                    .append(r.maxResMaxJpeg ?: "n/a").append('\n')
+                field("active array (max-res mode)")
+                append(r.maxResActiveArray ?: "n/a").append('\n')
+                field("max JPEG via max-res map")
+                append(r.maxResMaxJpeg ?: "n/a").append('\n')
             }
-            append(field("ULTRA_HIGH_RESOLUTION_SENSOR"))
-                .append(if (r.ultraHighResolutionSensor) "yes" else "no").append('\n')
-            append(field("focal length (mm)"))
-                .append(r.focalLengthsMm).append('\n')
-            append(field("sensor size (mm)"))
-                .append(r.sensorSizeMm).append("\n\n")
+            field("ULTRA_HIGH_RESOLUTION_SENSOR")
+            append(if (r.ultraHighResolutionSensor) "yes" else "no").append('\n')
+            field("focal length (mm)")
+            append(r.focalLengthsMm).append('\n')
+            field("sensor size (mm)")
+            append(r.sensorSizeMm).append("\n\n")
         }
         append(
             "Note: CameraX can only select sizes from the default map. A larger " +
