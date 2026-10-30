@@ -31,7 +31,9 @@ import java.util.Locale
  *  - "ultra-high-resolution sensor" — REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR
  *    (Android 14+).
  *
- * Reading camera characteristics needs no permission.
+ * Reading camera characteristics needs no permission — but each read is a
+ * binder call into cameraserver (see [collect]), so never call this on the
+ * main thread.
  */
 object CameraDiagnostics {
 
@@ -47,11 +49,42 @@ object CameraDiagnostics {
         val ultraHighResolutionSensor: Boolean,
         val focalLengthsMm: String,
         val sensorSizeMm: String,
+        val error: String? = null,
     )
 
+    /**
+     * Probe every camera. Every call here is a binder IPC into cameraserver
+     * and the first one can block for seconds on a cold HAL, so callers must
+     * run this on a background dispatcher. One failing camera becomes an
+     * [CameraReport.error] line instead of killing the whole dump.
+     */
     fun collect(context: Context): List<CameraReport> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        return manager.cameraIdList.map { id -> reportFor(manager, id) }
+        return try {
+            manager.cameraIdList.map { id ->
+                runCatching { reportFor(manager, id) }.getOrElse { e ->
+                    CameraReport(
+                        id = id, facing = "n/a", lensFacingLabel = "n/a",
+                        defaultActiveArray = "n/a", defaultMaxJpeg = "n/a",
+                        maxResAvailable = false, maxResActiveArray = null, maxResMaxJpeg = null,
+                        ultraHighResolutionSensor = false, focalLengthsMm = "n/a",
+                        sensorSizeMm = "n/a",
+                        error = "${e::class.java.simpleName}: ${e.message ?: "probe failed"}",
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            listOf(
+                CameraReport(
+                    id = "?", facing = "n/a", lensFacingLabel = "n/a",
+                    defaultActiveArray = "n/a", defaultMaxJpeg = "n/a",
+                    maxResAvailable = false, maxResActiveArray = null, maxResMaxJpeg = null,
+                    ultraHighResolutionSensor = false, focalLengthsMm = "n/a",
+                    sensorSizeMm = "n/a",
+                    error = "cameraIdList: ${e::class.java.simpleName}: ${e.message ?: ""}",
+                )
+            )
+        }
     }
 
     private fun reportFor(manager: CameraManager, id: String): CameraReport {
@@ -152,6 +185,10 @@ object CameraDiagnostics {
             .append(")\n")
         for (r in reports) {
             append("Camera ").append(r.id).append(" (").append(r.lensFacingLabel).append(")\n")
+            if (r.error != null) {
+                append(field("error")).append(r.error).append("\n\n")
+                continue
+            }
             append(field("active array (default mode)"))
                 .append(r.defaultActiveArray).append('\n')
             append(field("max JPEG via default map"))

@@ -32,6 +32,26 @@ class CameraDiagnosticsTest {
     }
 
     @Test
+    fun toTextRendersCameraErrorInsteadOfDetails() {
+        val broken = report.copy(
+            facing = "n/a",
+            lensFacingLabel = "n/a",
+            defaultActiveArray = "n/a",
+            defaultMaxJpeg = "n/a",
+            maxResAvailable = false,
+            maxResActiveArray = null,
+            maxResMaxJpeg = null,
+            ultraHighResolutionSensor = false,
+            focalLengthsMm = "n/a",
+            sensorSizeMm = "n/a",
+            error = "CameraAccessException: HAL device disconnected",
+        )
+        val text = CameraDiagnostics.toText(listOf(broken)).replace(Regex(" +"), " ")
+        assertTrue(text.contains("error: CameraAccessException: HAL device disconnected"))
+        assertFalse(text.contains("active array (default mode)"))
+    }
+
+    @Test
     fun toTextOmitsMaxResLinesWhenNotAvailable() {
         val noMaxRes = report.copy(
             maxResAvailable = false,
