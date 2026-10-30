@@ -150,7 +150,7 @@ class AppContainer(context: Context) {
             .build()
 
     val files = DocumentFiles(appContext)
-    val importer = io.github.enricof64.scan.scan.PageImporter(appContext)
+    val importer = io.github.enricof64.scan.PageImporter(appContext)
     val settings: SettingsRepository =
         DataStoreSettingsRepository(DataStoreSettingsRepository.createDefaultDataStore(appContext))
 
@@ -158,11 +158,11 @@ class AppContainer(context: Context) {
     // OPENSCAN_TELEMETRY_UPLOAD_TOKEN gradle properties or env vars); when
     // absent the uploader falls back to an inert ".invalid" endpoint. The
     // queue rows live in the same database so uploads survive process death.
-    val uploader = io.github.enricof64.scan.scan.FeedbackUploader(
+    val uploader = io.github.enricof64.scan.FeedbackUploader(
         settings = settings,
         appVersion = appVersionName(),
         endpoint = BuildConfig.TELEMETRY_UPLOAD_URL.ifBlank {
-            io.github.enricof64.scan.scan.FeedbackUploader.ENDPOINT
+            io.github.enricof64.scan.FeedbackUploader.ENDPOINT
         },
         token = BuildConfig.TELEMETRY_TOKEN,
         dao = database.openscanDao(),

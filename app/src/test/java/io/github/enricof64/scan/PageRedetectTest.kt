@@ -1,6 +1,6 @@
 package io.github.enricof64.scan
 
-import io.github.enricof64.scan.scan.PageRedetect
+import io.github.enricof64.scan.PageRedetect
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

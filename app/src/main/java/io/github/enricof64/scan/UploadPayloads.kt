@@ -1,4 +1,4 @@
-package io.github.enricof64.scan.scan
+package io.github.enricof64.scan
 
 import org.json.JSONArray
 import org.json.JSONObject

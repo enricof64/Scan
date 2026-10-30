@@ -11,7 +11,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
-import io.github.enricof64.scan.scan.Images
+import io.github.enricof64.scan.Images
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.math.abs

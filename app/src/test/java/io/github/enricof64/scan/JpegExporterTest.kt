@@ -1,6 +1,6 @@
 package io.github.enricof64.scan
 
-import io.github.enricof64.scan.scan.JpegExporter
+import io.github.enricof64.scan.JpegExporter
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File

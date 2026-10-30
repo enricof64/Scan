@@ -1,4 +1,4 @@
-package io.github.enricof64.scan.scan
+package io.github.enricof64.scan
 
 import android.graphics.Bitmap
 import kotlin.math.abs

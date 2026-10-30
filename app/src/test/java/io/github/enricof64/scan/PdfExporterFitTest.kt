@@ -1,6 +1,6 @@
 package io.github.enricof64.scan
 
-import io.github.enricof64.scan.scan.PdfExporter
+import io.github.enricof64.scan.PdfExporter
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

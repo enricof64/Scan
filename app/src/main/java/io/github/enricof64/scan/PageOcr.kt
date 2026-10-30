@@ -1,4 +1,4 @@
-package io.github.enricof64.scan.scan
+package io.github.enricof64.scan
 
 import android.content.Context
 import com.google.android.gms.tasks.Task

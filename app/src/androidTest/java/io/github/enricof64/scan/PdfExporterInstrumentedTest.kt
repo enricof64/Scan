@@ -7,8 +7,8 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.enricof64.scan.scan.Images
-import io.github.enricof64.scan.scan.PdfExporter
+import io.github.enricof64.scan.Images
+import io.github.enricof64.scan.PdfExporter
 import java.io.File
 import kotlin.math.abs
 import org.junit.Assert.assertEquals

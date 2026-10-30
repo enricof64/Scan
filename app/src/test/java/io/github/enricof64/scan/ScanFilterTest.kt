@@ -1,6 +1,6 @@
 package io.github.enricof64.scan
 
-import io.github.enricof64.scan.scan.ScanFilter
+import io.github.enricof64.scan.ScanFilter
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

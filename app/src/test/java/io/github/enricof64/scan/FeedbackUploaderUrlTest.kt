@@ -1,6 +1,6 @@
 package io.github.enricof64.scan
 
-import io.github.enricof64.scan.scan.FeedbackUploader
+import io.github.enricof64.scan.FeedbackUploader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

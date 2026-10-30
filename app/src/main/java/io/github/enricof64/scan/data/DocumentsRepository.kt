@@ -1,8 +1,8 @@
 package io.github.enricof64.scan.data
 
 import android.net.Uri
-import io.github.enricof64.scan.scan.FeedbackUploader
-import io.github.enricof64.scan.scan.PageImporter
+import io.github.enricof64.scan.FeedbackUploader
+import io.github.enricof64.scan.PageImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -57,9 +57,9 @@ class DocumentsRepository(
             position = position,
             filePath = file.absolutePath,
             createdAt = System.currentTimeMillis(),
-            autoCorners = io.github.enricof64.scan.scan.PageCorners.encode(autoCorners),
-            refinedCorners = io.github.enricof64.scan.scan.PageCorners.encode(refinedCorners),
-            userCorners = io.github.enricof64.scan.scan.PageCorners.encode(userCorners),
+            autoCorners = io.github.enricof64.scan.PageCorners.encode(autoCorners),
+            refinedCorners = io.github.enricof64.scan.PageCorners.encode(refinedCorners),
+            userCorners = io.github.enricof64.scan.PageCorners.encode(userCorners),
             cornerSchema = cornerSchemaFor(autoCorners, refinedCorners, userCorners),
             imageWidth = imageWidth.takeIf { hasCorners(autoCorners, refinedCorners, userCorners) },
             imageHeight = imageHeight.takeIf { hasCorners(autoCorners, refinedCorners, userCorners) },
@@ -111,15 +111,15 @@ class DocumentsRepository(
         withContext(Dispatchers.IO) {
             val position = dao.getPages(documentId).size
             val file = files.pageFile(documentId)
-            io.github.enricof64.scan.scan.Images.saveJpeg(bitmap, file)
+            io.github.enricof64.scan.Images.saveJpeg(bitmap, file)
             val page = PageEntity(
                 documentId = documentId,
                 position = position,
                 filePath = file.absolutePath,
                 createdAt = System.currentTimeMillis(),
-                autoCorners = io.github.enricof64.scan.scan.PageCorners.encode(autoCorners),
-                refinedCorners = io.github.enricof64.scan.scan.PageCorners.encode(refinedCorners),
-                userCorners = io.github.enricof64.scan.scan.PageCorners.encode(userCorners),
+                autoCorners = io.github.enricof64.scan.PageCorners.encode(autoCorners),
+                refinedCorners = io.github.enricof64.scan.PageCorners.encode(refinedCorners),
+                userCorners = io.github.enricof64.scan.PageCorners.encode(userCorners),
                 cornerSchema = cornerSchemaFor(autoCorners, refinedCorners, userCorners),
                 imageWidth = imageWidth.takeIf { hasCorners(autoCorners, refinedCorners, userCorners) },
                 imageHeight = imageHeight.takeIf { hasCorners(autoCorners, refinedCorners, userCorners) },
@@ -157,9 +157,9 @@ class DocumentsRepository(
     ) {
         dao.setPageCorners(
             id = pageId,
-            auto = io.github.enricof64.scan.scan.PageCorners.encode(autoCorners),
-            refined = io.github.enricof64.scan.scan.PageCorners.encode(refinedCorners),
-            user = io.github.enricof64.scan.scan.PageCorners.encode(userCorners),
+            auto = io.github.enricof64.scan.PageCorners.encode(autoCorners),
+            refined = io.github.enricof64.scan.PageCorners.encode(refinedCorners),
+            user = io.github.enricof64.scan.PageCorners.encode(userCorners),
             schema = cornerSchemaFor(autoCorners, refinedCorners, userCorners),
             width = imageWidth,
             height = imageHeight,
@@ -177,8 +177,8 @@ class DocumentsRepository(
     /** Visible upload status for Settings (item 0). */
     fun observeUploads(): Flow<List<UploadEntry>> = dao.observeUploads()
 
-    fun observeUploadStats(): Flow<io.github.enricof64.scan.scan.UploadStats> =
-        dao.observeUploads().map { io.github.enricof64.scan.scan.UploadStats.from(it) }
+    fun observeUploadStats(): Flow<io.github.enricof64.scan.UploadStats> =
+        dao.observeUploads().map { io.github.enricof64.scan.UploadStats.from(it) }
 
     /** Manual retry of failed/queued uploads from Settings. */
     fun retryUploads() {
@@ -226,12 +226,12 @@ class DocumentsRepository(
     /** Bakes a 90° clockwise rotation into the stored page JPEG. */
     suspend fun rotatePage(page: PageEntity) = withContext(Dispatchers.IO) {
         val source = files.pageFile(page.filePath)
-        val bitmap = io.github.enricof64.scan.scan.Images.decodeScaled(source, maxDim = 2600)
+        val bitmap = io.github.enricof64.scan.Images.decodeScaled(source, maxDim = 2600)
             ?: return@withContext
         val matrix = android.graphics.Matrix().apply { postRotate(90f) }
         val rotated = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         val dest = files.pageFile(page.documentId)
-        io.github.enricof64.scan.scan.Images.saveJpeg(rotated, dest)
+        io.github.enricof64.scan.Images.saveJpeg(rotated, dest)
         // A baked rotation invalidates the recorded corner geometry (quads
         // live in pre-rotation frame coordinates), so the pair is cleared
         // rather than left silently stale; dims track the new stored page.
@@ -256,7 +256,7 @@ class DocumentsRepository(
         /** Corner-format version marker: null when there is nothing to version. */
         fun cornerSchemaFor(vararg quads: FloatArray?): Int? =
             if (quads.any { it != null }) {
-                io.github.enricof64.scan.scan.PageCorners.SCHEMA_VERSION
+                io.github.enricof64.scan.PageCorners.SCHEMA_VERSION
             } else {
                 null
             }
@@ -291,15 +291,15 @@ class DocumentsRepository(
         val page = dao.getPage(pageId) ?: error("Page not found")
         val original = files.originalFile(page.documentId, pageId).takeIf { it.exists() }
         val sourceFile = original ?: java.io.File(page.filePath)
-        val source = io.github.enricof64.scan.scan.Images.decodeScaled(
-            sourceFile, io.github.enricof64.scan.scan.PageRedetect.REDETECT_MAX_DIM
+        val source = io.github.enricof64.scan.Images.decodeScaled(
+            sourceFile, io.github.enricof64.scan.PageRedetect.REDETECT_MAX_DIM
         ) ?: error("Cannot decode page image")
         try {
-            val result = io.github.enricof64.scan.scan.PageRedetect.redetect(source)
+            val result = io.github.enricof64.scan.PageRedetect.redetect(source)
             val warped = result.bitmap
             if (warped != null) {
                 val dest = files.pageFile(page.documentId)
-                io.github.enricof64.scan.scan.Images.saveJpeg(warped, dest)
+                io.github.enricof64.scan.Images.saveJpeg(warped, dest)
                 if (warped !== source) warped.recycle()
                 source.recycle()
                 dao.setPageFile(pageId, dest.absolutePath)
@@ -309,8 +309,8 @@ class DocumentsRepository(
             }
             dao.setPageCorners(
                 id = pageId,
-                auto = io.github.enricof64.scan.scan.PageCorners.encode(result.auto),
-                refined = io.github.enricof64.scan.scan.PageCorners.encode(result.refined),
+                auto = io.github.enricof64.scan.PageCorners.encode(result.auto),
+                refined = io.github.enricof64.scan.PageCorners.encode(result.refined),
                 user = null,
                 schema = cornerSchemaFor(result.auto, result.refined, null),
                 width = result.width,

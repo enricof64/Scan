@@ -101,6 +101,6 @@ flock /tmp/gradle-openscan.lock ./gradlew connectedDebugAndroidTest
 # keep artifacts after the run (gradle uninstalls the app afterwards):
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w io.github.alexeygrigorev.openscan.test/androidx.test.runner.AndroidJUnitRunner
-adb shell "run-as io.github.alexeygrigorev.openscan cat files/e2e-export.pdf" > e2e-export.pdf
+adb shell am instrument -w io.github.enricof64.scan.test/androidx.test.runner.AndroidJUnitRunner
+adb shell "run-as io.github.enricof64.scan cat files/e2e-export.pdf" > e2e-export.pdf
 ```

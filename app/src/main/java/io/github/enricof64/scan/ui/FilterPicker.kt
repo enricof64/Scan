@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.enricof64.scan.scan.ScanFilter
+import io.github.enricof64.scan.ScanFilter
 
 /**
  * Shared enhancement picker (items 6+7): the four filters, optionally with a

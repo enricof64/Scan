@@ -33,8 +33,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.SettingsRepository
-import io.github.enricof64.scan.scan.ScanFilter
-import io.github.enricof64.scan.scan.UploadStats
+import io.github.enricof64.scan.ScanFilter
+import io.github.enricof64.scan.UploadStats
 import io.github.enricof64.scan.update.ReleaseChecker
 import io.github.enricof64.scan.update.UpdateMonitor
 import io.github.enricof64.scan.update.UpdateState

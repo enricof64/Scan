@@ -7,8 +7,8 @@ import android.graphics.Paint
 import android.graphics.BitmapFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.enricof64.scan.scan.PdfExporter
-import io.github.enricof64.scan.scan.ScanPipeline
+import io.github.enricof64.scan.PdfExporter
+import io.github.enricof64.scan.ScanPipeline
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test

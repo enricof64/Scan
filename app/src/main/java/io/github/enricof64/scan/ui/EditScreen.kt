@@ -45,10 +45,10 @@ import androidx.lifecycle.viewModelScope
 import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.PageEntity
 import io.github.enricof64.scan.data.SettingsRepository
-import io.github.enricof64.scan.scan.Images
-import io.github.enricof64.scan.scan.PageOcr
-import io.github.enricof64.scan.scan.ScanFilter
-import io.github.enricof64.scan.scan.ScanFilters
+import io.github.enricof64.scan.Images
+import io.github.enricof64.scan.PageOcr
+import io.github.enricof64.scan.ScanFilter
+import io.github.enricof64.scan.ScanFilters
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

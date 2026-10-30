@@ -11,10 +11,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.SettingsRepository
-import io.github.enricof64.scan.scan.CaptureRefine
-import io.github.enricof64.scan.scan.Images
-import io.github.enricof64.scan.scan.QuadPlausibility
-import io.github.enricof64.scan.scan.ScanPipeline
+import io.github.enricof64.scan.CaptureRefine
+import io.github.enricof64.scan.Images
+import io.github.enricof64.scan.QuadPlausibility
+import io.github.enricof64.scan.ScanPipeline
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -323,14 +323,14 @@ class BatchScanViewModel(
         thumbCache.get(page.id)?.let { return it }
         return withContext(Dispatchers.IO) {
             // The review shows the same enhancement the export will embed.
-            val filter = io.github.enricof64.scan.scan.ScanFilter.fromId(
+            val filter = io.github.enricof64.scan.ScanFilter.fromId(
                 runCatching { settings.filterDefault.first() }.getOrNull()
             )
             val rendered = renderPage(page, THUMB_MAX_DIM) ?: return@withContext null
-            val enhanced = if (filter == io.github.enricof64.scan.scan.ScanFilter.ORIGINAL) {
+            val enhanced = if (filter == io.github.enricof64.scan.ScanFilter.ORIGINAL) {
                 rendered
             } else {
-                io.github.enricof64.scan.scan.ScanFilters.apply(rendered, filter)
+                io.github.enricof64.scan.ScanFilters.apply(rendered, filter)
                     ?.also { rendered.recycle() } ?: rendered
             }
             enhanced.asImageBitmap().also { thumbCache.put(page.id, it) }

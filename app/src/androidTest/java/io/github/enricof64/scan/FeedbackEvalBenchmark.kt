@@ -7,9 +7,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.enricof64.scan.scan.CaptureRefine
-import io.github.enricof64.scan.scan.EvalScore
-import io.github.enricof64.scan.scan.ScanPipeline
+import io.github.enricof64.scan.CaptureRefine
+import io.github.enricof64.scan.EvalScore
+import io.github.enricof64.scan.ScanPipeline
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test

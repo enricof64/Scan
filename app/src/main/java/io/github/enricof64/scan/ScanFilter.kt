@@ -1,4 +1,4 @@
-package io.github.enricof64.scan.scan
+package io.github.enricof64.scan
 
 /**
  * Post-processing enhancement filters (item 6). Stored as stable string ids

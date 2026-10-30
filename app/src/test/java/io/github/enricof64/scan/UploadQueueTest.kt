@@ -7,7 +7,7 @@ import io.github.enricof64.scan.data.PageEntity
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.data.UploadEntry
 import io.github.enricof64.scan.data.UploadState
-import io.github.enricof64.scan.scan.FeedbackUploader
+import io.github.enricof64.scan.FeedbackUploader
 import java.io.File
 import java.net.URL
 import kotlinx.coroutines.flow.Flow

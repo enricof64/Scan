@@ -1,4 +1,4 @@
-package io.github.enricof64.scan.scan
+package io.github.enricof64.scan
 
 import kotlin.math.max
 import kotlin.math.min

@@ -15,11 +15,11 @@ import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.OpenScanDatabase
 import io.github.enricof64.scan.data.PageEntity
 import io.github.enricof64.scan.data.SettingsRepository
-import io.github.enricof64.scan.scan.FeedbackUploader
-import io.github.enricof64.scan.scan.Images
-import io.github.enricof64.scan.scan.JpegExporter
-import io.github.enricof64.scan.scan.PageImporter
-import io.github.enricof64.scan.scan.PdfExporter
+import io.github.enricof64.scan.FeedbackUploader
+import io.github.enricof64.scan.Images
+import io.github.enricof64.scan.JpegExporter
+import io.github.enricof64.scan.PageImporter
+import io.github.enricof64.scan.PdfExporter
 import java.io.File
 import java.util.zip.ZipFile
 import kotlin.math.abs

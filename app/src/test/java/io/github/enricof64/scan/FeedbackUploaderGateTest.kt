@@ -1,7 +1,7 @@
 package io.github.enricof64.scan
 
 import io.github.enricof64.scan.data.SettingsRepository
-import io.github.enricof64.scan.scan.FeedbackUploader
+import io.github.enricof64.scan.FeedbackUploader
 import java.io.File
 import java.net.URL
 import java.util.UUID
