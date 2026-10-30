@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -25,6 +27,7 @@ import io.github.enricof64.scan.ui.EditViewModel
 import io.github.enricof64.scan.ui.SettingsScreen
 import io.github.enricof64.scan.ui.SettingsViewModel
 import io.github.enricof64.scan.ui.theme.OpenScanTheme
+import io.github.enricof64.scan.ui.theme.ThemeMode
 
 object Routes {
     const val DOCUMENTS = "documents"
@@ -61,7 +64,10 @@ class MainActivity : ComponentActivity() {
         // Flush due developer-share uploads (queued while offline or dead).
         container.repository.flushUploads()
         setContent {
-            OpenScanTheme {
+            // Read inside the composition so the scheme switches live when
+            // the user changes the override in settings.
+            val themeMode by container.settings.themeMode.collectAsState(initial = ThemeMode.AUTO)
+            OpenScanTheme(themeMode = themeMode) {
                 OpenScanNavHost(container)
             }
         }

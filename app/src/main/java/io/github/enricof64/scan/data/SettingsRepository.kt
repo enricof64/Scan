@@ -62,6 +62,14 @@ interface SettingsRepository {
     val autoCaptureEnabled: Flow<Boolean>
 
     suspend fun setAutoCaptureEnabled(enabled: Boolean)
+
+    /**
+     * App theme: [io.github.enricof64.scan.ui.theme.ThemeMode.AUTO] follows
+     * the system setting, LIGHT/DARK force a scheme. Default AUTO.
+     */
+    val themeMode: Flow<String>
+
+    suspend fun setThemeMode(mode: String)
 }
 
 /** DataStore-backed [SettingsRepository]; the only reader/writer of the pref. */
@@ -104,6 +112,13 @@ class DataStoreSettingsRepository(
         dataStore.edit { prefs -> prefs[AUTO_CAPTURE_ENABLED] = enabled }
     }
 
+    override val themeMode: Flow<String> =
+        dataStore.data.map { prefs -> prefs[THEME_MODE] ?: DEFAULT_THEME_MODE }
+
+    override suspend fun setThemeMode(mode: String) {
+        dataStore.edit { prefs -> prefs[THEME_MODE] = mode }
+    }
+
     companion object {
         /** Opt-in telemetry is off unless the user turns it on. */
         const val DEFAULT_FEEDBACK_UPLOAD_ENABLED = false
@@ -120,11 +135,15 @@ class DataStoreSettingsRepository(
         /** Manual shutter is the primary flow; auto-capture is opt-in. */
         const val DEFAULT_AUTO_CAPTURE_ENABLED = false
 
+        /** Theme follows the system unless the user overrides it. */
+        const val DEFAULT_THEME_MODE = "auto"
+
         private val FEEDBACK_UPLOAD_ENABLED = booleanPreferencesKey("feedback_upload_enabled")
         private val KEEP_ORIGINALS_ENABLED = booleanPreferencesKey("keep_originals_enabled")
         private val DEVELOPER_MODE_ENABLED = booleanPreferencesKey("developer_mode_enabled")
         private val FILTER_DEFAULT = stringPreferencesKey("filter_default")
         private val AUTO_CAPTURE_ENABLED = booleanPreferencesKey("auto_capture_enabled")
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
 
         /** File-backed preference DataStore used by [io.github.enricof64.scan.data.AppContainer]. */
         fun createDefaultDataStore(context: Context): DataStore<Preferences> {

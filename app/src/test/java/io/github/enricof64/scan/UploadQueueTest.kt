@@ -6,6 +6,7 @@ import io.github.enricof64.scan.data.OpenScanDao
 import io.github.enricof64.scan.data.PageEntity
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.data.UploadEntry
+import io.github.enricof64.scan.ui.theme.ThemeMode
 import io.github.enricof64.scan.data.UploadState
 import io.github.enricof64.scan.FeedbackUploader
 import java.io.File
@@ -44,6 +45,8 @@ class UploadQueueTest {
         override suspend fun setFilterDefault(filterId: String) = Unit
         override val autoCaptureEnabled = MutableStateFlow(false)
         override suspend fun setAutoCaptureEnabled(enabled: Boolean) {}
+        override val themeMode: Flow<String> = MutableStateFlow(ThemeMode.AUTO)
+        override suspend fun setThemeMode(mode: String) = Unit
     }
 
     private class FakeDao : OpenScanDao {
