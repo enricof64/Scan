@@ -109,6 +109,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     updateMonitor: UpdateMonitor,
     onBack: () -> Unit,
+    onOpenCameraDiagnostics: () -> Unit,
 ) {
     val enabled by viewModel.feedbackUploadEnabled.collectAsState()
     val keepOriginals by viewModel.keepOriginalsEnabled.collectAsState()
@@ -185,6 +186,16 @@ fun SettingsScreen(
                     "for a document or page becomes the default.",
                 value = ScanFilter.fromId(filterDefault).title,
                 onClick = { filterPickerOpen = true },
+                modifier = Modifier.padding(top = 16.dp),
+            )
+
+            SettingChoiceRow(
+                title = "Camera diagnostics (50 MP check)",
+                description = "Read-only list of each camera's maximum JPEG resolution: " +
+                    "what CameraX can select (default map) and what a direct " +
+                    "Camera2 maximum-resolution session would capture.",
+                value = "Open",
+                onClick = onOpenCameraDiagnostics,
                 modifier = Modifier.padding(top = 16.dp),
             )
 

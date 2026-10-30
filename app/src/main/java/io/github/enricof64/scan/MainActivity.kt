@@ -13,6 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.enricof64.scan.data.AppContainer
 import io.github.enricof64.scan.ui.BatchImport
+import io.github.enricof64.scan.ui.CameraDiagnosticsScreen
 import io.github.enricof64.scan.ui.CaptureRoute
 import io.github.enricof64.scan.ui.CaptureViewModel
 import io.github.enricof64.scan.ui.DocumentScreen
@@ -31,6 +32,7 @@ object Routes {
     const val DOCUMENT = "document/{documentId}"
     const val EDIT = "edit/{pageId}"
     const val SETTINGS = "settings"
+    const val CAMERA_DIAGNOSTICS = "camera_diagnostics"
 
     fun document(id: Long) = "document/$id"
     fun edit(id: Long) = "edit/$id"
@@ -88,7 +90,12 @@ fun OpenScanNavHost(container: AppContainer) {
                 viewModel = viewModel { SettingsViewModel(container.settings, container.repository) },
                 updateMonitor = container.updateMonitor,
                 onBack = { navController.popBackStack() },
+                onOpenCameraDiagnostics = { navController.navigate(Routes.CAMERA_DIAGNOSTICS) },
             )
+        }
+
+        composable(Routes.CAMERA_DIAGNOSTICS) {
+            CameraDiagnosticsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(
