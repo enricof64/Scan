@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.enricof64.scan.Sharpness
 import io.github.enricof64.scan.data.DocumentsRepository
 import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.CaptureRefine
@@ -59,6 +60,8 @@ data class CapturedPage(
     val userEdited: Boolean = false,
     val rotation: Int = 0,
     val version: Int = 0,
+    /** F2: the frame was accepted despite failing the blur check (max retakes used). */
+    val blurFlagged: Boolean = false,
 ) {
     override fun equals(other: Any?) =
         other is CapturedPage && other.id == id && other.version == version
@@ -132,6 +135,10 @@ class BatchScanViewModel(
 
     private val analyzing = AtomicBoolean(false)
     private val capturing = AtomicBoolean(false)
+    /** Current attempt count within the blur-retake sequence (1-based). */
+    private var attempt = 0
+    /** Sharpest blurry frame seen so far in the current sequence (variance, frame). */
+    private var sharpestSoFar: Pair<Float, Bitmap>? = null
     private var lastAnalysisAt = 0L
     private var lastQuad: FloatArray? = null
     private var lastQuadFrame: Pair<Int, Int>? = null
@@ -208,39 +215,118 @@ class BatchScanViewModel(
         }
     }
 
-    /** Full-res upright still from ImageCapture; refined on the detect thread. */
+    /**
+     * Full-res upright still from ImageCapture (F2 blur gate, item 10):
+     * a still below the Laplacian threshold triggers an automatic retake
+     * (up to [MAX_CAPTURE_ATTEMPTS] per shot); whatever frame is left at
+     * the end is accepted and, if it failed the gate, flagged in the
+     * review grid. Refinement runs on the detect thread.
+     */
     fun onStillCaptured(stillFull: Bitmap) {
         viewModelScope.launch(detectContext) {
             try {
                 // Bound the stored frame like every other page import.
                 val still = downscaleMax(stillFull, SAVE_MAX_DIM)
-                val live = scaleQuad(lastQuad, lastQuadFrame, still.width, still.height)
-                // Post-capture refinement (item 8b): a slower full-res pass
-                // with plausibility checks; falls back to the live quad.
-                val refined = runCatching { CaptureRefine.refine(still, live) }.getOrNull()
-                val quad = refined?.quad ?: live
-                val file = File(batchDir, "page-${nextId}.jpg")
-                Images.saveJpeg(still, file)
-                pages.value = pages.value + CapturedPage(
-                    id = nextId++,
-                    file = file,
-                    frameWidth = still.width,
-                    frameHeight = still.height,
-                    quad = quad,
-                    autoQuad = live ?: quad,
-                    refinedQuad = refined?.refined,
-                    needsCheck = refined?.needsCheck ?: true,
-                )
-                pageCount.value = pages.value.size
-                lastCapturedQuad = quad
-                lastCapturedFrame = still.width to still.height
-                lostSinceLastCapture = false
-                snapTick.value += 1
+                attempt += 1
+                val variance = Sharpness.laplaceVariance(still)
+                if (variance < Sharpness.BLUR_THRESHOLD) {
+                    // Keep only the sharpest frame of the sequence — the
+                    // losers are recycled to keep RAM bounded.
+                    val best = sharpestSoFar
+                    sharpestSoFar =
+                        if (best == null || variance > best.first) {
+                            best?.let { it.second.recycle() }
+                            variance to still
+                        } else {
+                            still.recycle()
+                            best
+                        }
+                    if (attempt < MAX_CAPTURE_ATTEMPTS) {
+                        // Retake: `capturing` stays true, so neither a manual
+                        // shutter nor the auto trigger can interrupt it.
+                        shootAgain()
+                        return@launch
+                    }
+                    // Max retakes used: accept the sharpest we have, flagged.
+                    val keep = sharpestSoFar!!
+                    attempt = 0
+                    sharpestSoFar = null
+                    acceptPage(keep.second, blurFlagged = true)
+                    return@launch
+                }
+                // Sharp: discard any blurry holdover and accept this frame.
+                sharpestSoFar?.let { it.second.recycle() }
+                sharpestSoFar = null
+                attempt = 0
+                acceptPage(still, blurFlagged = false)
             } catch (t: Throwable) {
                 error.value = t.message ?: "Could not save the page"
-            } finally {
                 capturing.set(false)
             }
+        }
+    }
+
+    /**
+     * One more physical shoot for the blur-retake sequence: same
+     * focus-lock-then-shoot path as a fresh capture, but `capturing` is
+     * already held so [requestCapture] cannot race in.
+     */
+    private fun shootAgain() {
+        val shoot = { captureShutter?.invoke() ?: giveUp() }
+        try {
+            focusAndShoot?.invoke(shoot) ?: shoot()
+        } catch (_: Throwable) {
+            shoot()
+        }
+    }
+
+    /**
+     * The retake path produced no frame (no UI hook, camera gone). Accept
+     * the sharpest blurry holdover if we have one, else just unblock.
+     */
+    private fun giveUp() {
+        viewModelScope.launch(detectContext) {
+            val keep = sharpestSoFar
+            attempt = 0
+            sharpestSoFar = null
+            if (keep != null) {
+                acceptPage(keep.second, blurFlagged = true)
+            } else {
+                capturing.set(false)
+            }
+        }
+    }
+
+    /** Refine, store and append the accepted frame (runs on the detect thread). */
+    private fun acceptPage(still: Bitmap, blurFlagged: Boolean) {
+        try {
+            val live = scaleQuad(lastQuad, lastQuadFrame, still.width, still.height)
+            // Post-capture refinement (item 8b): a slower full-res pass
+            // with plausibility checks; falls back to the live quad.
+            val refined = runCatching { CaptureRefine.refine(still, live) }.getOrNull()
+            val quad = refined?.quad ?: live
+            val file = File(batchDir, "page-${nextId}.jpg")
+            Images.saveJpeg(still, file)
+            pages.value = pages.value + CapturedPage(
+                id = nextId++,
+                file = file,
+                frameWidth = still.width,
+                frameHeight = still.height,
+                quad = quad,
+                autoQuad = live ?: quad,
+                refinedQuad = refined?.refined,
+                needsCheck = refined?.needsCheck ?: true,
+                blurFlagged = blurFlagged,
+            )
+            pageCount.value = pages.value.size
+            lastCapturedQuad = quad
+            lastCapturedFrame = still.width to still.height
+            lostSinceLastCapture = false
+            snapTick.value += 1
+        } catch (t: Throwable) {
+            error.value = t.message ?: "Could not save the page"
+        } finally {
+            capturing.set(false)
         }
     }
 
@@ -525,7 +611,19 @@ class BatchScanViewModel(
         const val THUMB_MAX_DIM = 720
         const val EDITOR_MAX_DIM = 2048
         const val AUTODETECT_MAX_DIM = 1600
-        /** Stored-frame bound (item 10): full enough for ~300 DPI A4 warps. */
-        const val SAVE_MAX_DIM = 3200
+        /**
+         * Stored-frame bound (F2 "cattura piena"): the still keeps the full
+         * resolution of the selected lens (4080×3060 on the Fold 8, ~350
+         * DPI on A4 after the perspective warp); the cap only guards
+         * worst-case RAM on devices whose sensor outruns a 4500 px side.
+         */
+        const val SAVE_MAX_DIM = 4500
+
+        /**
+         * F2 blur gate: automatic retakes per shot (plan §7 "max 3
+         * tentativi"). After the third blurry frame the sharpest one is
+         * saved anyway and flagged in the review grid.
+         */
+        const val MAX_CAPTURE_ATTEMPTS = 3
     }
 }

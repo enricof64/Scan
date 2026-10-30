@@ -134,7 +134,31 @@ Costs / constraints to keep in mind:
   camera access are covered by the `CAMERA` permission the foss flavor
   already declares.
 
-## What is NOT in F0
+## F2 outcome (no Camera2 hand-off needed)
 
-- The actual Camera2 capture hand-off (F2).
-- The server-OCR endpoint check (needs the LAN box; tracked in F5).
+Given the on-device verdict above, the Plan B hand-off (direct Camera2
+session with `SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION`) was **not
+implemented**: on the Fold 8 the max-res map offers nothing beyond the
+default map (12.5 MP main, 2.1 MP ultrawide), so a Camera2 session would
+gain zero resolution and only cost complexity and hand-off latency.
+
+F2 implemented the rest of plan §7 on top of the existing CameraX flow:
+
+- **Explicit lens selection** (`LensPicker`): the app enumerates the back
+  lenses' default-map JPEG sizes itself and binds the largest (on the
+  Fold 8: camera 0, 4080×3060), instead of trusting
+  `CameraSelector.DEFAULT_BACK_CAMERA`. Fallback to the default selector
+  when no usable lens is found.
+- **Full-resolution stills**: `SAVE_MAX_DIM` raised 3200 → 4500, so the
+  stored still keeps the full lens resolution (≈ 350 DPI on A4 after the
+  perspective warp); the cap only guards worst-case RAM on bigger sensors.
+- **Blur gate**: Laplacian-variance check on every still; below threshold
+  an automatic retake fires (max 3 per shot, same focus-lock path);
+  whatever frame is left is saved anyway and flagged "sfocato" in the
+  review grid. AF/AE lock before each shot was already in the inherited
+  `focusAndShoot` path; the torch already existed, F2 adds the reflection
+  warning chip.
+
+The done-criterion of §7 ("50 MP selezionati") is therefore met as:
+**largest public lens (12.5 MP) selected, frame mosso rilevato e
+ri-scattato, originale salvabile** — to be confirmed on the device.
