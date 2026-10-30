@@ -43,7 +43,7 @@ current status.
 | E-signature (draw + place on page) | Limited free | P1 | ⏳ roadmap |
 | Search inside documents (OCR full-text) | Partial free | P1 | ⏳ roadmap (Room FTS over OCR text) |
 | Auto-capture (steady-frame snap) | Free | P1 | ✅ shipped (foss flavor: the viewfinder snaps when the OpenCV quad detector holds the document's corners steady for two frames after a cooldown; re-arms on page flip) |
-| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/alexeygrigorev/openscan/scan/ScanPipeline.kt); torch, manual Snap, Stop → review; play build unchanged, GMS scanner, zero permissions) |
+| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/scan/ScanPipeline.kt); torch, manual Snap, Stop → review; play build unchanged, GMS scanner, zero permissions) |
 | ID card mode (both sides, one page) | Free-ish | P2 | ⏳ backlog |
 | Whiteboard / blackboard mode | Free | P2 | ⏳ backlog |
 | Annotation / markup (pen, highlight) | Basic free | P2 | ⏳ backlog |

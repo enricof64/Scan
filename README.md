@@ -96,7 +96,7 @@ detection and are deleted after 90 days. Verify the merged manifest yourself:
 ```bash
 aapt2 dump badging app-release.apk | grep uses-permission
 # uses-permission: name='android.permission.INTERNET'
-# uses-permission: name='io.github.alexeygrigorev.openscan.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+# uses-permission: name='io.github.enricof64.scan.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
 ```
 
 Details — including exactly what an opted-in upload contains — in

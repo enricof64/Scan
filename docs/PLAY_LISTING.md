@@ -19,7 +19,7 @@ Practical consequences for our listing:
   third app with the name — directly behind a well-known FOSS scanner of the
   same category. Expect discoverability and misidentity complaints, and some
   impersonation-report risk raised by the existing app's community.
-- Our `applicationId` (`io.github.alexeygrigorev.openscan`) is unique and
+- Our `applicationId` (`io.github.enricof64.scan`) is unique and
   unaffected.
 - Decision left to the maintainer at submission time: keep the OpenScan brand
   (repo/GitHub stay `openscan` either way) or differentiate the store title.

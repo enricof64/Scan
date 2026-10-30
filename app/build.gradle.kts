@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.alexeygrigorev.openscan"
+    namespace = "io.github.enricof64.scan"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.alexeygrigorev.openscan"
+        applicationId = "io.github.enricof64.scan"
         minSdk = 26
         targetSdk = 36
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
