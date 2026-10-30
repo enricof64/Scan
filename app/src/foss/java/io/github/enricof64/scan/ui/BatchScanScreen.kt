@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraFilter
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
@@ -98,6 +99,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.enricof64.scan.LensPicker
 import io.github.enricof64.scan.OpenScanApp
 import io.github.enricof64.scan.util.formatPageCount
 import java.util.concurrent.Executor
@@ -108,9 +110,11 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 /**
  * The foss flavor's own batch capture (docs/FEATURES.md "In-app capture" +
@@ -328,9 +332,28 @@ private fun BatchCapturePhase(
                 }
             }
 
+            // F2 explicit lens selection: bind the back lens with the
+            // largest default-map JPEG instead of letting the platform
+            // choose (on the Fold 8 that is the 4080x3060 main, not the
+            // ultrawide). CameraManager reads are binder calls — off the
+            // main thread; fall back to the default selector when nothing
+            // usable is found.
+            val lens = withContext(Dispatchers.IO) {
+                LensPicker.pickBackLens(LensPicker.backLensCandidates(context))
+            }
+            val selector = if (lens != null) {
+                CameraSelector.Builder()
+                    .addCameraFilter(CameraFilter { infos ->
+                        infos.filter { it.cameraIdentifier?.cameraIds?.contains(lens.id) == true }
+                    })
+                    .build()
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
+
             camera = provider.bindToLifecycle(
                 lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
+                selector,
                 preview,
                 analysis,
                 imageCapture,
@@ -418,6 +441,19 @@ private fun BatchCapturePhase(
             }
 
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {}
+
+            // F2 (plan §7): torch on means glossy paper can reflect — give
+            // the user the mitigation before they shoot.
+            if (torch) {
+                Text(
+                    "Torch on — glossy paper may reflect: tilt the sheet slightly",
+                    color = Color(0xFFFFAB40),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = 24.dp),
+                )
+            }
 
             error?.let {
                 Surface(
@@ -637,6 +673,20 @@ private fun PageThumbnail(
                         .align(Alignment.BottomStart)
                         .padding(4.dp)
                         .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+            }
+            // F2: the frame survived the blur gate only after the max
+            // retakes — the user should double-check it in the grid.
+            if (page.blurFlagged) {
+                Text(
+                    "sfocato",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFFAB40),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp),
                 )
             }
