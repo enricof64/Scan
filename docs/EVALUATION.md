@@ -569,7 +569,11 @@ outcome).
 Hodgman intersection of the detected and GT quads in normalized space) plus a
 `summary` block in `results.json`: `detectionRate`, `iouMedian`, `iouP90`,
 `iouAbove09`. The plan's F3 targets — detection ≥ 95 %, corner IoU ≥ 0.9,
-manual corrections ≤ 5 % — are therefore read off a single on-device run:
+manual corrections ≤ 5 % — are therefore read off a single on-device run. The
+plan also asks for 20–30 **fresh real-world photos** added to the 82-photo
+corpus (the corpus index is just a JSON list, so new shots plug in without
+touching the harness; their GT quads can be omitted, which only drops them
+from the IoU stats, not from the detection rate):
 
 ```bash
 adb push index.json /data/local/tmp/openscan-eval/
