@@ -2,6 +2,7 @@ package io.github.enricof64.scan
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Core
 import org.opencv.core.Mat
@@ -13,6 +14,8 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -44,10 +47,47 @@ object ScanPipeline {
     /** Perspective-warps [src] through [quad] (TL, TR, BR, BL) into a rect bitmap. */
     fun crop(src: Bitmap, quad: FloatArray): Bitmap = Perspective.warpToRect(src, quad)
 
-    /** Convenience: detect + crop, or null if no document is found. */
+    /** Convenience: detect + crop + deskew, or null if no document is found. */
     fun scan(src: Bitmap): ScanResult? {
         val quad = detectQuad(src) ?: return null
-        return ScanResult(quad, crop(src, quad))
+        return ScanResult(quad, deskew(crop(src, quad)))
+    }
+
+    /**
+     * Deskew (plan §8 item 2): estimate the residual tilt of the text lines
+     * and, when it exceeds [Deskew.SIGNIFICANT_THRESHOLD_DEG], rotate the
+     * page so the lines run flat. The estimate runs on a downscaled gray
+     * copy; only the significant case allocates a full-size rotated bitmap
+     * (canvas sized for the rotated bounding box).
+     */
+    fun deskew(src: Bitmap): Bitmap {
+        val longEdge = max(src.width, src.height)
+        val scale = min(1f, Deskew.ANALYSIS_MAX_DIM.toFloat() / longEdge)
+        val sw = max(1, (src.width * scale).roundToInt())
+        val sh = max(1, (src.height * scale).roundToInt())
+        val small = if (sw == src.width && sh == src.height) src
+            else Bitmap.createScaledBitmap(src, sw, sh, true)
+        val argb = IntArray(sw * sh)
+        small.getPixels(argb, 0, sw, 0, 0, sw, sh)
+        if (small !== src) small.recycle()
+        val gray = IntArray(argb.size) { FilterPixels.luminance(argb[it]) }
+        val angle = Deskew.estimate(gray, sw, sh)
+        if (!Deskew.isSignificant(angle)) return src
+        val rad = Math.toRadians(angle)
+        val cos = cos(rad).toFloat()
+        val sin = sin(rad).toFloat()
+        val w = (src.width * cos + src.height * sin).roundToInt()
+        val h = (src.width * sin + src.height * cos).roundToInt()
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val m = Matrix()
+        // Rotate by -angle about the source center, then place that center
+        // at the canvas center. (Android post-concatenation: the last
+        // posted operation is applied to the point first.)
+        m.postTranslate(w / 2f - src.width / 2f, h / 2f - src.height / 2f)
+        m.postRotate(-angle.toFloat(), src.width / 2f, src.height / 2f)
+        canvas.drawBitmap(src, m, null)
+        return out
     }
 }
 

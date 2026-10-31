@@ -18,11 +18,16 @@ object ScanFilters {
             val h = source.height
             val pixels = IntArray(w * h)
             source.getPixels(pixels, 0, w, 0, 0, w, h)
-            val out = when (filter) {
+            val resolved = if (filter == ScanFilter.AUTO) {
+                FilterPixels.pickAuto(pixels)
+            } else {
+                filter
+            }
+            val out = when (resolved) {
                 ScanFilter.DOCUMENT -> FilterPixels.applyDocument(pixels, w, h)
                 ScanFilter.BLACK_WHITE -> FilterPixels.applyBlackWhite(pixels, w, h)
                 ScanFilter.GRAYSCALE -> FilterPixels.applyGrayscale(pixels)
-                ScanFilter.ORIGINAL -> pixels
+                else -> pixels
             }
             Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
                 it.setPixels(out, 0, w, 0, 0, w, h)

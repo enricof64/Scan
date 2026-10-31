@@ -1,6 +1,7 @@
 package io.github.enricof64.scan.ui
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.enricof64.scan.JpegExporter
 import io.github.enricof64.scan.PdfExporter
+import io.github.enricof64.scan.RealDpi
 import io.github.enricof64.scan.ScanFilter
 import io.github.enricof64.scan.data.DocumentFiles
 import io.github.enricof64.scan.data.DocumentsRepository
@@ -48,10 +50,12 @@ import io.github.enricof64.scan.data.SettingsRepository
 import io.github.enricof64.scan.util.formatFileSize
 import io.github.enricof64.scan.util.formatPageCount
 import io.github.enricof64.scan.util.safeFileName
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -94,6 +98,41 @@ class ExportViewModel(
 
     /** One-shot snackbar notices (saved-to path, …). */
     val notice = MutableStateFlow<String?>(null)
+
+    /**
+     * Real DPI of the first stored page (plan §8 item 7), for display: the
+     * pixels the capture actually delivered, assuming A4. Never a target —
+     * the pipeline does not upscale to fake higher DPI.
+     */
+    private val _realDpi = MutableStateFlow<Int?>(null)
+    val realDpi: StateFlow<Int?> = _realDpi.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try {
+                val page = repository.getPages(documentId).firstOrNull() ?: return@launch
+                val file = File(page.filePath)
+                _realDpi.value = if (file.exists()) {
+                    withContext(Dispatchers.IO) { jpegDpi(file) }
+                } else {
+                    null
+                }
+            } catch (_: Throwable) {
+                _realDpi.value = null
+            }
+        }
+    }
+
+    /** Decodes only the JPEG header of [file] to get its pixel size. */
+    private fun jpegDpi(file: File): Int? {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        return if (opts.outWidth > 0 && opts.outHeight > 0) {
+            RealDpi.estimate(opts.outWidth, opts.outHeight).roundToInt()
+        } else {
+            null
+        }
+    }
 
     data class ShareRequest(val file: File, val mimeType: String, val label: String)
 
@@ -219,6 +258,7 @@ fun ExportScreen(viewModel: ExportViewModel, onBack: () -> Unit) {
     val exportReady by viewModel.exportReady.collectAsState()
     val shareRequest by viewModel.shareRequest.collectAsState()
     val notice by viewModel.notice.collectAsState()
+    val realDpi by viewModel.realDpi.collectAsState()
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -263,8 +303,9 @@ fun ExportScreen(viewModel: ExportViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                "${formatPageCount(pages.size)} — " +
-                    "the PDF applies the document enhancement, the images are the stored pages as-is.",
+                "${formatPageCount(pages.size)}" +
+                    (if (realDpi != null) " · ≈$realDpi DPI (A4)" else "") +
+                    " — the PDF applies the document enhancement, the images are the stored pages as-is.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),

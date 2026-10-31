@@ -1,6 +1,7 @@
 package io.github.enricof64.scan
 
 import io.github.enricof64.scan.FilterPixels
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +59,50 @@ class FilterPixelsTest {
         assertTrue("red stays dominant over blue", FilterPixels.red(seal) > FilterPixels.blue(seal) + 30)
     }
 
+    /** Page with a uniform color-cast paper (no shading) and dark text columns. */
+    private fun castPage(w: Int = 80, h: Int = 60, paper: Int): IntArray {
+        val pixels = IntArray(w * h) { paper }
+        for (x in 0 until w) {
+            if (x % 12 < 2) {
+                for (y in 0 until h) {
+                    pixels[y * w + x] = FilterPixels.argb(255, 40, 40, 40)
+                }
+            }
+        }
+        return pixels
+    }
+
+    @Test
+    fun `document mode removes a warm color cast`() {
+        val w = 80
+        val h = 60
+        val warm = FilterPixels.argb(255, 200, 190, 160)
+        val out = FilterPixels.applyDocument(castPage(w, h, warm), w, h)
+        // Sample paper away from the text columns.
+        val p = out[10 * w + 8]
+        val r = FilterPixels.red(p)
+        val g = FilterPixels.green(p)
+        val b = FilterPixels.blue(p)
+        assertTrue("warm paper $p should whiten past 200", FilterPixels.luminance(p) > 200)
+        val cast = maxOf(abs(r - g), abs(g - b), abs(r - b))
+        assertTrue("paper channels ($r,$g,$b) should be near-neutral, cast $cast", cast <= 12)
+    }
+
+    @Test
+    fun `document mode removes a cool color cast`() {
+        val w = 80
+        val h = 60
+        val cool = FilterPixels.argb(255, 160, 185, 205)
+        val out = FilterPixels.applyDocument(castPage(w, h, cool), w, h)
+        val p = out[10 * w + 8]
+        val r = FilterPixels.red(p)
+        val g = FilterPixels.green(p)
+        val b = FilterPixels.blue(p)
+        assertTrue("cool paper $p should whiten past 200", FilterPixels.luminance(p) > 200)
+        val cast = maxOf(abs(r - g), abs(g - b), abs(r - b))
+        assertTrue("paper channels ($r,$g,$b) should be near-neutral, cast $cast", cast <= 12)
+    }
+
     @Test
     fun `black and white outputs only pure black or white`() {
         val w = 60
@@ -83,6 +128,37 @@ class FilterPixelsTest {
         val sharp = intArrayOf(0, 0, 0, 0, 255, 0, 0, 0, 0)
         val blurred = FilterPixels.boxBlur(sharp, 3, 3, 1)
         assertEquals(255 / 9, blurred[4])
+    }
+
+    /** Page of paper (220) with dark ink columns [ink] px wide every [pitch] px. */
+    private fun inkPage(w: Int = 80, h: Int = 60, ink: Int, pitch: Int): IntArray {
+        val pixels = IntArray(w * h) { gray(220) }
+        for (x in 0 until w) {
+            if (x % pitch < ink) {
+                for (y in 0 until h) {
+                    pixels[y * w + x] = gray(30)
+                }
+            }
+        }
+        return pixels
+    }
+
+    @Test
+    fun `pickAuto chooses black-and-white for dense ink`() {
+        val dense = inkPage(ink = 3, pitch = 6) // ~50% ink
+        assertEquals(ScanFilter.BLACK_WHITE, FilterPixels.pickAuto(dense))
+    }
+
+    @Test
+    fun `pickAuto keeps document mode for sparse ink`() {
+        val sparse = inkPage(ink = 1, pitch = 25) // 5% ink
+        assertEquals(ScanFilter.DOCUMENT, FilterPixels.pickAuto(sparse))
+    }
+
+    @Test
+    fun `pickAuto keeps document mode without a bimodal split`() {
+        val flat = IntArray(200 * 200) { gray(150) }
+        assertEquals(ScanFilter.DOCUMENT, FilterPixels.pickAuto(flat))
     }
 
     @Test

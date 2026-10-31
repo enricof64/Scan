@@ -17,3 +17,11 @@
 # Coroutines debug metadata is safe to strip; silence warnings from
 # kotlinx-coroutines internals pulled in transitively.
 -dontwarn kotlinx.coroutines.debug.**
+
+# DocAligner (evaluation benchmark): the detector is referenced only from
+# instrumentation tests, so R8 would otherwise strip it — and with it the
+# ONNX runtime — from the release APK. Keep both so the on-device benchmark
+# can run the learned detector.
+-keep class io.github.enricof64.scan.DocAligner { *; }
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
