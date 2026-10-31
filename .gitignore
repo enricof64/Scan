@@ -21,5 +21,6 @@ local.properties
 /.gradle-home/
 /.sqltmp/
 /.apkcheck/
+/.pylibs/
 # user chat attachments are never committed
 /.uploads/

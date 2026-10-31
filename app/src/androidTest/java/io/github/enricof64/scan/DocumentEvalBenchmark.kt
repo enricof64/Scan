@@ -28,9 +28,12 @@ import kotlin.math.roundToInt
  * The harness measures the PRODUCTION pipeline geometry
  * ([ScanPipeline.detectQuad] → [ScanPipeline.crop] → the app's real
  * [PdfExporter.exportPdf] for every document group) and, where ground truth
- * is available, the quad IoU in normalized space. Per-image overlays,
- * crops, PDFs and a results.json (with a summary block: detection rate,
- * IoU median/p90, share >= 0.9) land in filesDir/eval for the host to pull.
+ * is available, the quad IoU in normalized space. It also runs the
+ * DocAligner learned detector ([DocAligner.detectQuad]) on every image as a
+ * second candidate source, so the two can be compared per scene from the
+ * same run. Per-image overlays, crops, PDFs and a results.json (with a
+ * summary block: detection rate, IoU median/p90, share >= 0.9, plus the
+ * DocAligner equivalents) land in filesDir/eval for the host to pull.
  * See docs/EVALUATION.md.
  */
 @RunWith(AndroidJUnit4::class)
@@ -55,6 +58,8 @@ class DocumentEvalBenchmark {
         val pagesByDoc = LinkedHashMap<String, MutableList<File>>()
         val ious = mutableListOf<Double>()
         var detectedCount = 0
+        val daIous = mutableListOf<Double>()
+        var daDetectedCount = 0
         val tAll = System.currentTimeMillis()
 
         val n = min(images.length(), maxImages)
@@ -72,6 +77,31 @@ class DocumentEvalBenchmark {
                 val src = decoded.bitmap
                 record.put("srcW", src.width).put("srcH", src.height)
                 val gt = entry.optJSONArray("gt_quad")
+                record.put("scene", entry.optString("scene", ""))
+
+                // DocAligner as a second candidate source (plan F3).
+                val daT0 = System.currentTimeMillis()
+                val daQuad = DocAligner.detectQuad(context, src)
+                record.put("daMs", System.currentTimeMillis() - daT0)
+                if (daQuad == null) {
+                    record.put("daOk", false)
+                } else {
+                    record.put("daOk", true)
+                    daDetectedCount++
+                    record.put("daQuad", JSONArray(daQuad.map { it.roundToInt() }))
+                    if (gt != null && gt.length() == 8) {
+                        val daPts = (0 until 4).map {
+                            (daQuad[it * 2].toDouble() / src.width) to (daQuad[it * 2 + 1].toDouble() / src.height)
+                        }
+                        val gtPts = (0 until 4).map {
+                            (gt.getDouble(it * 2) / decoded.originalWidth) to (gt.getDouble(it * 2 + 1) / decoded.originalHeight)
+                        }
+                        val daIou = quadIou(daPts, gtPts)
+                        daIous.add(daIou)
+                        record.put("daIou", daIou)
+                    }
+                }
+
                 val t0 = System.currentTimeMillis()
                 val quad = ScanPipeline.detectQuad(src)
                 record.put("detectMs", System.currentTimeMillis() - t0)
@@ -130,6 +160,14 @@ class DocumentEvalBenchmark {
             summary.put("iouMedian", percentile(sorted, 0.50))
                 .put("iouP90", percentile(sorted, 0.90))
                 .put("iouAbove09", sorted.count { it >= 0.9 })
+        }
+        summary.put("daDetected", daDetectedCount)
+            .put("daDetectionRate", if (n > 0) daDetectedCount.toDouble() / n else 0.0)
+        if (daIous.isNotEmpty()) {
+            val sorted = daIous.sorted()
+            summary.put("daIouMedian", percentile(sorted, 0.50))
+                .put("daIouP90", percentile(sorted, 0.90))
+                .put("daIouAbove09", sorted.count { it >= 0.9 })
         }
         File(outDir, "results.json").writeText(
             JSONObject()

@@ -582,10 +582,25 @@ adb shell am instrument -w -e class io.github.enricof64.scan.DocumentEvalBenchma
 adb pull <package>/files/eval
 ```
 
-**DocAligner: deferred, not dropped.** The DocAligner comparison needs (a) the
-model weights — downloading them was not possible in this session (network
-access declined by the owner) — and (b) an ONNX runtime dependency. When the
-weights are available: add DocAligner as a second candidate source in this same
-harness and emit a per-scene table (detection + IoU, split by the MIDV scene
-codes CA/CS/HA/HS/KA/KS/PA/PS/TA/TS); Canny v19 stays the production detector
-until that run shows a clear win.
+**DocAligner integrated (2026-10-30).** The LCNet100 weights
+(4,767,987 bytes, SHA-256
+`4a2e3d54a025087861268392d417b2a6c170485d5f2464b83a2670a1a2f45b68`) are
+bundled under `app/src/main/assets/docaligner/` with their Apache-2.0
+LICENSE and NOTICE (DocsaidLab DocAligner, unmodified official ONNX
+weights); `com.microsoft.onnxruntime:onnxruntime-android:1.31.1` runs them
+on-device. `DocAligner.kt` implements the upstream `heatmap_reg` contract
+— in: `img` float32 `[1,3,256,256]` BGR/255 (square resize, no aspect
+preservation); out: `heatmap` float32 `[4,128,128]`, channels in TL, TR,
+BR, BL order — with the upstream post-processing: threshold 0.3, centroid
+of the active region per channel, mapped from 128-space to the source
+frame. The post-processing is pure-JVM (`cornersFromHeatmaps`, unit-tested
+in `DocAlignerTest.kt`); a verified Python reference run on a real receipt
+photo puts all four detected corners within a few pixels of the ground
+truth quad. The benchmark now runs DocAligner on every corpus image
+alongside the production Canny detector: per-image `daOk`/`daQuad`/`daMs`/
+`daIou`, a summary block with `daDetected`/`daDetectionRate`/
+`daIouMedian`/`daIouP90`/`daIouAbove09`, and the `scene` of each record, so
+the per-scene comparison table (split by the MIDV scene codes
+CA/CS/HA/HS/KA/KS/PA/PS/TA/TS) can be read straight out of `results.json`.
+Canny v19 stays the production detector until a benchmark run shows a clear
+DocAligner win.

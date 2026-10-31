@@ -157,6 +157,7 @@ dependencies {
     "fossImplementation"(libs.androidx.camera.view)
     implementation(libs.pdfbox.android)
     implementation(libs.opencv)
+    implementation(libs.onnxruntime.android)
 
     testImplementation(libs.junit)
     // android.jar ships org.json as stubs that throw in local JVM tests; the

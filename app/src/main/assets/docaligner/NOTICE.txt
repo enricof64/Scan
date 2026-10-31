@@ -1,0 +1,6 @@
+DocAligner model weights by DocsaidLab
+Upstream: https://github.com/DocsaidLab/DocAligner
+Model documentation: https://docsaid.org/zh-hans/models/docaligner
+License: Apache-2.0 (see LICENSE)
+Models: heatmap_reg LCNet100 and FastViT-SA24, unmodified official ONNX weights.
+Pinned sizes and SHA-256: src/services/document-enhancement/documentCornerModels.js
