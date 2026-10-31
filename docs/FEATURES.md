@@ -22,11 +22,11 @@ current status.
 
 | Feature | CamScanner free tier | Priority | OpenScan status |
 |---|---|---|---|
-| Auto edge detection | Free (with ads) | P0 | ✅ shipped (ML Kit scanner) |
+| Auto edge detection | Free (with ads) | P0 | ✅ shipped (in-app OpenCV Canny v19 detector, [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)) |
 | Perspective correction | Free | P0 | ✅ shipped |
-| Manual corner adjustment | Free | P0 | ✅ shipped (play: the Play services scanner UI; foss: drag-the-corners editor in the batch review grid; in-app page editing offers rotate/delete/OCR) |
-| Batch / multi-page scan | Free (caps) | P0 | ✅ shipped (play: the ML Kit scanner's multi-page UI, up to 50 pages; foss: own batch capture — pages auto-snap while you flip, Stop → review/correct grid → one document). Foss saves keep the original camera frame next to each cropped page (Settings → Capture → "Save original photos", on by default) so crops can be redone and captures shared for debugging later |
-| Image filters (grayscale / B&W / enhance) | Basic free, Magic Color premium | P0 | ✅ shipped (provided by the Play services scanner UI, not in-app editing; in-app editing offers rotate/delete/OCR) |
+| Manual corner adjustment | Free | P0 | ✅ shipped (drag-the-corners editor in the batch review grid + manual re-crop from the kept original; in-app page editing offers rotate/delete/OCR) |
+| Batch / multi-page scan | Free (caps) | P0 | ✅ shipped (own batch capture — pages auto-snap while you flip, Stop → review/correct grid → one document). Saves keep the original camera frame next to each cropped page (Settings → Capture → "Save original photos", on by default) so crops can be redone and captures shared for debugging later |
+| Image filters (grayscale / B&W / enhance) | Basic free, Magic Color premium | P0 | ✅ shipped (in-app filters, per page / per document / app default: Auto by ink density, Document, Black & white, Grayscale, Original — plus auto deskew >0.5°, per-channel white balance + shadow removal, and a real-DPI readout on the export screen; in-app editing also offers rotate/delete/OCR) |
 | PDF export (multi-page) | Free but **watermarked** | P0 | ✅ shipped — never watermarked |
 | Share / export targets | Free | P0 | ✅ shipped (system share sheet, FileProvider) |
 | Import from gallery | Free | P0 | ✅ shipped (photo picker, no storage permission) |
@@ -43,7 +43,7 @@ current status.
 | E-signature (draw + place on page) | Limited free | P1 | ⏳ roadmap |
 | Search inside documents (OCR full-text) | Partial free | P1 | ⏳ roadmap (Room FTS over OCR text) |
 | Auto-capture (steady-frame snap) | Free | P1 | ✅ shipped (foss flavor: the viewfinder snaps when the OpenCV quad detector holds the document's corners steady for two frames after a cooldown; re-arms on page flip) |
-| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt); torch, manual Snap, Stop → review) |
+| In-app capture with our own camera UI | n/a | P1 | ✅ shipped (foss flavor: CameraX preview + our OpenCV quad detector — [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt); explicit back-lens selection (largest default-map JPEG), full-resolution stills, AF/AE lock before capture, blur auto-retake up to 3 attempts with a “sfocato” badge when all are blurry, torch + reflection warning, manual Snap, Stop → review) |
 | ID card mode (both sides, one page) | Free-ish | P2 | ⏳ backlog |
 | Whiteboard / blackboard mode | Free | P2 | ⏳ backlog |
 | Annotation / markup (pen, highlight) | Basic free | P2 | ⏳ backlog |
@@ -51,7 +51,7 @@ current status.
 | Print service | Free-ish | P2 | ⏳ backlog (Android print framework) |
 | Stain/glare cleanup beyond scanner modes | Premium | P2 | ⏳ backlog |
 | Book scan (flattening) | Premium | P2 | ⏳ backlog (hard problem — defer) |
-| QR / barcode scanning | Free | P2 | ⏳ backlog (ML Kit barcode) |
+| QR / barcode scanning | Free | P2 | ⏳ backlog (needs a new on-device barcode library — e.g. ZXing — since ML Kit was cut) |
 | Low-light / night enhancement | Partially premium | P2 | ⏳ backlog |
 | Optional user-configured sync (WebDAV / Nextcloud / Paperless-ngx) | Cloud-tied (their cloud) | P2 | ⏳ backlog — self-hosted push, never a OpenScan account |
 | F-Droid flavor (own CameraX+OpenCV pipeline) | n/a | P2 | ✅ shipped (`foss` flavor, the only flavor in this fork: the only build declaring CAMERA, in its own manifest — app/src/foss/AndroidManifest.xml; no GMS document-scanner dependency, no ML Kit, no Play services) |
