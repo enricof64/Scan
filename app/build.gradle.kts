@@ -35,22 +35,19 @@ android {
             "\"${telemetryConfigValue("OPENSCAN_TELEMETRY_UPLOAD_TOKEN")}\"",
         )
 
-        // OpenCV ships x86/x86_64 libs for emulators; packaged on a
-        // real-device APK they triple its size (~170MB native across four
-        // ABIs vs ~55MB on the two ARM ABIs).
-        // Every phone that can run this app is arm64 or armv7.
+        // Owner decision (2026-10-31): ship arm64-v8a only. The OpenCV +
+        // ONNX Runtime native libs make up most of the APK size (~58MB on
+        // the two ARM ABIs, ~24MB of it on armeabi-v7a alone); arm64 covers
+        // the target device (Galaxy Z Fold 8) and essentially every phone
+        // that can run this app in 2026. Trade-off: debug builds no longer
+        // run on x86_64 emulators (use an arm64 emulator or a real device
+        // for instrumented tests).
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
     buildTypes {
-        debug {
-            // Emulators are typically x86_64; allow running debug/androidTest on emulators
-            ndk {
-                abiFilters.add("x86_64")
-            }
-        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
