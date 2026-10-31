@@ -4,20 +4,19 @@
 
 ## What this measures — and what it cannot
 
-Production corner detection is the **ML Kit document scanner** (a Play-services
-module). On emulators without a signed-in Play Store the module refuses to
-download (`ZappDownloader: No successful Zapp module downloads`, scanner UI
-shows "Something went wrong") even though networking works — so **no emulator
-run can measure the production detector**. The app itself degrades gracefully
-(photo-picker import), which is itself tested in `PhotoPickerImportUiTest`.
+Production corner detection is the app's own OpenCV detector in
+[`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)
+(**Canny v19**, see the [v19 section](#detector-v19-extension-veto-for-boundary-complete-winners--offline--on-device-2026-10-03-late-night) below) — since the fork dropped the `play` flavor
+and ML Kit, the `androidTest` harness now measures the **production detector
+directly**, on any device, with no Play services involved. (Historically the
+GMS document scanner was the production detector and could not be measured on
+Play-less emulators — that is no longer the case.)
 
 This evaluation measures the **pipeline geometry** — decode → detect
-quad → perspective crop → `PdfExporter.exportPdf` — with an OpenCV
-detector. When the v3 benchmark ran, that detector was `androidTest`-only;
-it has since been promoted into the app as [`ScanPipeline.kt`](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)
-and upgraded to **detector v8** — see the [v8 section](#detector-v8-ported-into-scanpipeline--on-device-re-run-2026-10-03-evening)
-below (the CameraX capture flow itself still prefers ML Kit on Play-services
-devices, which should be spot-checked once on a real phone).
+quad → perspective crop → `PdfExporter.exportPdf` — plus, where the corpus
+index carries a ground-truth quad (the 30 MIDV500 photos), the **quad IoU**
+in normalized space and a **summary block** in `results.json` (detection rate,
+IoU median/p90, share ≥ 0.9).
 
 ## Dataset
 
@@ -50,12 +49,12 @@ Full provenance: [`eval/manifest.json`](eval/manifest.json).
 Test-only `DocumentEvalBenchmark` (androidTest):
 
 1. Decode each photo ≤ 2200 px; work at 900 px long edge.
-2. Detect quad: grayscale → Gaussian blur → Canny (40/120) → dilate → external
-   contours; approximate each of the 12 largest plausible contours to a convex
-   quad (eps ladder 1–8 % of perimeter); score candidates by
-   `area × solidity⁴` so solid document outlines beat spiky background traces;
-   `minAreaRect` fallback restricted to contours ≥ 30 % of the dominant one
-   (never the face photo inside an ID card).
+2. Detect quad: the production `ScanPipeline.detectQuad` (Canny v19 — the v3
+   recipe below was its ancestor: grayscale → Gaussian blur → Canny (40/120) →
+   dilate → external contours → convex quad approximation, scored by
+   `area × solidity⁴`; v8–v19 add the CLAHE pass, paperness floors, line-fit
+   corner refinement, side extension and the extension veto — see the detector
+   sections below).
 3. Perspective-warp via exact 4-point homography with bilinear sampling.
 4. Export one PDF per document group through the **production**
    `PdfExporter.exportPdf`; write overlays (green quad + red corners), crops
@@ -75,12 +74,11 @@ every Commons photo is its own one-page document.
 | PDF export | **62/62 succeeded**, all A4, aspect-true, centered |
 | Watermark check (`pdftotext`) | **62/62 empty text layer** — nothing stamped |
 
-Interpretation: the detector is **precise on full-page paper photos** (the
-common scanning case) and **unreliable on small cards in MIDV's cluttered
-scenes** (inner-detail or background grabs produce the low-IoU half). That is
-the known ceiling of a textbook OpenCV recipe, not of the app: production uses
-ML Kit's trained model. The 8 detection misses were 6 Commons photos (crumpled
-/ low-contrast paper) + 2 MIDV scenes.
+Interpretation (v3 era): the detector is **precise on full-page paper photos**
+(the common scanning case) and **unreliable on small cards in MIDV's cluttered
+scenes** (inner-detail or background grabs produce the low-IoU half). The 8
+detection misses were 6 Commons photos (crumpled / low-contrast paper) + 2
+MIDV scenes. Current detector standing is in the v8–v19 sections below.
 
 The load-bearing claims survive regardless of detector: **the export path
 produces correct, watermark-free PDFs in 62/62 cases**, including 10-page
@@ -543,3 +541,47 @@ desk/laptop by the texture mask; pencil-case quad, py and device) and `passport_
 (GT IoU 0.68, loose). `receipt_01` on device is now **fixed**; py↔device parity for
 it is moot (py rescues it via texture, device via the veto — different paths, same
 outcome).
+
+<!-- review-2026-10-30 -->
+## F3: pipeline quality + DocAligner comparison (2026-10-30)
+
+**Implemented in this milestone** (plan §8, pure JVM, unit-tested):
+
+1. **Deskew** — projection-profile tilt estimate on a downscaled gray copy,
+   rotation only when the residual exceeds 0.5° (`Deskew.kt`, wired into
+   `ScanPipeline.scan`: detect → crop → deskew).
+2. **White balance + shadow removal** — `FilterPixels.normalize` now
+   estimates the paper background *per channel* (downscale to 600 px + wide
+   box blur) and drives every channel to the same neutral target; one step
+   removes color casts and illumination shading, with gains clamped to
+   `[0.35, 3.2]`.
+3. **Auto filter** — new `ScanFilter.AUTO`: `FilterPixels.pickAuto` splits
+   the stride-sampled luminance histogram (midpoint of the 10th/90th
+   percentiles) and picks Black & white when ink covers ≥ 20% of the page,
+   otherwise Document; no clean bimodal split → Document.
+4. **Real DPI** — `RealDpi.estimate` (px × 25.4 / paper mm, A4 by default) is
+   shown on the export screen ("≈ N DPI (A4)"), decoded from the first stored
+   page's JPEG header only (`inJustDecodeBounds`, IO dispatcher). Display-only
+   by design: the pipeline never upscales to fake 300/600 DPI.
+
+**Benchmark.** `DocumentEvalBenchmark` now reads the ground-truth quads from
+`index.json` (the 30 MIDV500 photos) and reports per-image `iou` (Sutherland–
+Hodgman intersection of the detected and GT quads in normalized space) plus a
+`summary` block in `results.json`: `detectionRate`, `iouMedian`, `iouP90`,
+`iouAbove09`. The plan's F3 targets — detection ≥ 95 %, corner IoU ≥ 0.9,
+manual corrections ≤ 5 % — are therefore read off a single on-device run:
+
+```bash
+adb push index.json /data/local/tmp/openscan-eval/
+adb shell am instrument -w -e class io.github.enricof64.scan.DocumentEvalBenchmark \
+  io.github.enricof64.scan.test/androidx.test.runner.AndroidJUnitRunner
+adb pull <package>/files/eval
+```
+
+**DocAligner: deferred, not dropped.** The DocAligner comparison needs (a) the
+model weights — downloading them was not possible in this session (network
+access declined by the owner) — and (b) an ONNX runtime dependency. When the
+weights are available: add DocAligner as a second candidate source in this same
+harness and emit a per-scene table (detection + IoU, split by the MIDV scene
+codes CA/CS/HA/HS/KA/KS/PA/PS/TA/TS); Canny v19 stays the production detector
+until that run shows a clear win.
