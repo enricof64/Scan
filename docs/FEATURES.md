@@ -22,7 +22,7 @@ current status.
 
 | Feature | CamScanner free tier | Priority | OpenScan status |
 |---|---|---|---|
-| Auto edge detection | Free (with ads) | P0 | ✅ shipped (in-app OpenCV Canny v19 detector, [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt)) |
+| Auto edge detection | Free (with ads) | P0 | ✅ shipped (in-app OpenCV Canny v19 detector, [ScanPipeline](../app/src/main/java/io/github/enricof64/scan/ScanPipeline.kt); optional learned DocAligner ONNX detector behind Settings → Capture → “Learned detector (experimental)”, off by default with automatic Canny fallback) |
 | Perspective correction | Free | P0 | ✅ shipped |
 | Manual corner adjustment | Free | P0 | ✅ shipped (drag-the-corners editor in the batch review grid + manual re-crop from the kept original; in-app page editing offers rotate/delete/OCR) |
 | Batch / multi-page scan | Free (caps) | P0 | ✅ shipped (own batch capture — pages auto-snap while you flip, Stop → review/correct grid → one document). Saves keep the original camera frame next to each cropped page (Settings → Capture → "Save original photos", on by default) so crops can be redone and captures shared for debugging later |

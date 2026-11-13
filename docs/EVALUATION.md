@@ -604,3 +604,57 @@ the per-scene comparison table (split by the MIDV scene codes
 CA/CS/HA/HS/KA/KS/PA/PS/TA/TS) can be read straight out of `results.json`.
 Canny v19 stays the production detector until a benchmark run shows a clear
 DocAligner win.
+
+## F5: detector verdict — learned-first DocAligner vs Canny v19 (2026-11-13)
+
+**Goal (plan F5).** Decide the production corner detector. The plan's
+standing targets for a detector promotion are detection rate ≥ 95 %, corner
+IoU median ≥ 0.9, and manual corrections ≤ 5 %; the third one needs a user,
+so it is checked in the review grid, not by the benchmark. Canny v19 stays
+the production detector until an on-device run shows a clear DocAligner win.
+
+**What shipped for the verdict.**
+
+1. **Learned-first capture path (opt-in, default OFF)** —
+   `ScanPipeline.detectQuad(src, learnedFirst)` tries the bundled DocAligner
+   model first and uses its answer unless it is a `QuadPlausibility` *hard
+   failure* (null, non-convex, tiny, non-finite); soft flags (angles,
+   aspect, border) never block, exactly as on the Canny path. The decision
+   is the pure, unit-tested `ScanPipeline.acceptLearnedQuad`. The adapter is
+   installed at app startup (`OpenScanApp`), and the
+   Settings → Capture → "Learned detector (experimental)" toggle
+   (`learnedDetectorEnabled`, default off) drives it in the viewfinder, the
+   post-capture refinement (`CaptureRefine.refine(…, learnedFirst)`) and the
+   review editor's Auto re-detect. Off = byte-identical Canny behavior.
+   The saved-page re-detect (`PageRedetect`) deliberately stays Canny: it
+   repairs old pages with the current production detector and flipping it
+   before the verdict is out of scope.
+2. **Benchmark combined strategy (F5-B)** — `DocumentEvalBenchmark` now
+   measures a third column per image, `lf*` (learned-first with the Canny
+   fallback — unconditional, because this run IS the verdict about it),
+   alongside the existing Canny (`ok`/`iou`) and DocAligner (`da*`)
+   columns. The `summary` block carries per-strategy latency medians
+   (`detectMsMedian`/`daMsMedian`/`lfMsMedian`), the plan's `targets`
+   (detection ≥ 0.95, IoU median ≥ 0.9) and a `meets` / `daMeets` /
+   `lfMeets` boolean per strategy, so the verdict is read straight off
+   `results.json`. `lf_*` overlays land next to the Canny ones for the
+   visual check of where the combined strategy diverges.
+
+**On-device run (Fold 8).** Same corpus push as the F3 section above
+(plus the plan's 20–30 fresh real-world shots: new photos in `images/` with
+`{"file": …}` entries, GT optional), then the benchmark, then pull
+`results.json` and the `eval/overlays/lf_*` images:
+
+```bash
+adb push <images> /data/local/tmp/openscan-eval/images/
+adb push index.json /data/local/tmp/openscan-eval/
+adb shell am instrument -w -e class io.github.enricof64.scan.DocumentEvalBenchmark \
+  io.github.enricof64.scan.test/androidx.test.runner.AndroidJUnitRunner
+adb pull /data/data/io.github.enricof64.scan/files/eval out/
+```
+
+**Verdict.** *(Pending the on-device run. To be filled in when
+`results.json` comes back: per-strategy detection / IoU / latency, the
+`meets*` booleans, the visual pass over the `lf_*` overlays, and the
+decision — flip `DEFAULT_LEARNED_DETECTOR_ENABLED` to true and document it
+here, or keep Canny production with DocAligner as the opt-in.)*
