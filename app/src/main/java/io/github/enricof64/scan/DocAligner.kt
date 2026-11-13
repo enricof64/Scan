@@ -115,6 +115,7 @@ object DocAligner {
         }
     }
 
+    @Synchronized
     private fun ensureSession(context: Context): Holder? {
         holder?.let { return it }
         return try {

@@ -31,10 +31,14 @@ import kotlin.math.roundToInt
  * is available, the quad IoU in normalized space. It also runs the
  * DocAligner learned detector ([DocAligner.detectQuad]) on every image as a
  * second candidate source, so the two can be compared per scene from the
- * same run. Per-image overlays, crops, PDFs and a results.json (with a
- * summary block: detection rate, IoU median/p90, share >= 0.9, plus the
- * DocAligner equivalents) land in filesDir/eval for the host to pull.
- * See docs/EVALUATION.md.
+ * same run (F3). For the F5 detector verdict it also measures the COMBINED
+ * learned-first strategy (`lf*` fields: learned detector with the Canny
+ * fallback, exactly what the app runs when the Settings toggle is on —
+ * unconditional here, since this run IS the verdict about it) and carries
+ * per-strategy latency medians plus the plan's targets and a
+ * `meetsTargets` boolean per strategy, so the verdict is read straight out
+ * of the summary. Per-image overlays, crops, PDFs and a results.json land
+ * in filesDir/eval for the host to pull. See docs/EVALUATION.md (F5).
  */
 @RunWith(AndroidJUnit4::class)
 class DocumentEvalBenchmark {
@@ -54,12 +58,22 @@ class DocumentEvalBenchmark {
         val pdfsDir = File(outDir, "pdfs").apply { mkdirs() }
         val poolsDir = File(outDir, "pools").apply { mkdirs() }
 
+        // F5: guarantee the learned-first adapter is in place (OpenScanApp
+        // sets the same one; the benchmark must not depend on the process
+        // bootstrap).
+        ScanPipeline.learnedDetector = { bmp -> DocAligner.detectQuad(context, bmp) }
+
         val results = JSONArray()
         val pagesByDoc = LinkedHashMap<String, MutableList<File>>()
         val ious = mutableListOf<Double>()
         var detectedCount = 0
         val daIous = mutableListOf<Double>()
         var daDetectedCount = 0
+        val lfIous = mutableListOf<Double>()
+        var lfDetectedCount = 0
+        val detectMsList = mutableListOf<Long>()
+        val daMsList = mutableListOf<Long>()
+        val lfMsList = mutableListOf<Long>()
         val tAll = System.currentTimeMillis()
 
         val n = min(images.length(), maxImages)
@@ -83,6 +97,7 @@ class DocumentEvalBenchmark {
                 val daT0 = System.currentTimeMillis()
                 val daQuad = DocAligner.detectQuad(context, src)
                 record.put("daMs", System.currentTimeMillis() - daT0)
+                daMsList.add(record.getLong("daMs"))
                 if (daQuad == null) {
                     record.put("daOk", false)
                 } else {
@@ -102,9 +117,36 @@ class DocumentEvalBenchmark {
                     }
                 }
 
+                // F5 combined strategy: learned-first with the Canny fallback
+                // (what the app runs when the Settings toggle is on).
+                val lfT0 = System.currentTimeMillis()
+                val lfQuad = ScanPipeline.detectQuad(src, learnedFirst = true)
+                record.put("lfMs", System.currentTimeMillis() - lfT0)
+                lfMsList.add(record.getLong("lfMs"))
+                if (lfQuad == null) {
+                    record.put("lfOk", false)
+                } else {
+                    record.put("lfOk", true)
+                    lfDetectedCount++
+                    record.put("lfQuad", JSONArray(lfQuad.map { it.roundToInt() }))
+                    saveJpeg(drawOverlay(src, lfQuad), File(overlaysDir, "lf_$name"))
+                    if (gt != null && gt.length() == 8) {
+                        val lfPts = (0 until 4).map {
+                            (lfQuad[it * 2].toDouble() / src.width) to (lfQuad[it * 2 + 1].toDouble() / src.height)
+                        }
+                        val gtPts = (0 until 4).map {
+                            (gt.getDouble(it * 2) / decoded.originalWidth) to (gt.getDouble(it * 2 + 1) / decoded.originalHeight)
+                        }
+                        val lfIou = quadIou(lfPts, gtPts)
+                        lfIous.add(lfIou)
+                        record.put("lfIou", lfIou)
+                    }
+                }
+
                 val t0 = System.currentTimeMillis()
                 val quad = ScanPipeline.detectQuad(src)
                 record.put("detectMs", System.currentTimeMillis() - t0)
+                detectMsList.add(record.getLong("detectMs"))
                 if (quad == null) {
                     record.put("ok", false).put("error", "no quad found")
                     if (gt != null && gt.length() == 8) record.put("iou", 0.0)
@@ -155,20 +197,54 @@ class DocumentEvalBenchmark {
             .put("detected", detectedCount)
             .put("detectionRate", if (n > 0) detectedCount.toDouble() / n else 0.0)
             .put("withGroundTruth", ious.size)
-        if (ious.isNotEmpty()) {
-            val sorted = ious.sorted()
-            summary.put("iouMedian", percentile(sorted, 0.50))
-                .put("iouP90", percentile(sorted, 0.90))
-                .put("iouAbove09", sorted.count { it >= 0.9 })
+        val cannyIousSorted = ious.sorted()
+        val cannyIouMedian: Double? =
+            cannyIousSorted.takeIf { it.isNotEmpty() }?.let { percentile(it, 0.50) }
+        if (cannyIousSorted.isNotEmpty()) {
+            summary.put("iouMedian", cannyIouMedian)
+                .put("iouP90", percentile(cannyIousSorted, 0.90))
+                .put("iouAbove09", cannyIousSorted.count { it >= 0.9 })
         }
         summary.put("daDetected", daDetectedCount)
             .put("daDetectionRate", if (n > 0) daDetectedCount.toDouble() / n else 0.0)
-        if (daIous.isNotEmpty()) {
-            val sorted = daIous.sorted()
-            summary.put("daIouMedian", percentile(sorted, 0.50))
-                .put("daIouP90", percentile(sorted, 0.90))
-                .put("daIouAbove09", sorted.count { it >= 0.9 })
+        val daIousSorted = daIous.sorted()
+        val daIouMedian: Double? =
+            daIousSorted.takeIf { it.isNotEmpty() }?.let { percentile(it, 0.50) }
+        if (daIousSorted.isNotEmpty()) {
+            summary.put("daIouMedian", daIouMedian)
+                .put("daIouP90", percentile(daIousSorted, 0.90))
+                .put("daIouAbove09", daIousSorted.count { it >= 0.9 })
         }
+        // F5 combined (learned-first with Canny fallback) strategy.
+        summary.put("lfDetected", lfDetectedCount)
+            .put("lfDetectionRate", if (n > 0) lfDetectedCount.toDouble() / n else 0.0)
+        val lfIousSorted = lfIous.sorted()
+        val lfIouMedian: Double? =
+            lfIousSorted.takeIf { it.isNotEmpty() }?.let { percentile(it, 0.50) }
+        if (lfIousSorted.isNotEmpty()) {
+            summary.put("lfIouMedian", lfIouMedian)
+                .put("lfIouP90", percentile(lfIousSorted, 0.90))
+                .put("lfIouAbove09", lfIousSorted.count { it >= 0.9 })
+        }
+        // Per-strategy latency (median ms over the run corpus).
+        summary.put("detectMsMedian", medianOf(detectMsList))
+            .put("daMsMedian", medianOf(daMsList))
+            .put("lfMsMedian", medianOf(lfMsList))
+        // F5 verdict (plan targets): detection rate >= 95 % and corner IoU
+        // median >= 0.9. The third target (manual corrections <= 5 %) needs
+        // a user, so it is checked in the review grid, not here. `meets`
+        // flags the strategy that becomes the production default.
+        val targets = JSONObject()
+            .put("detectionRateMin", 0.95)
+            .put("iouMedianMin", 0.9)
+        fun meets(detectionRate: Double, iouMedian: Double?): Boolean =
+            iouMedian != null &&
+                detectionRate >= targets.getDouble("detectionRateMin") &&
+                iouMedian >= targets.getDouble("iouMedianMin")
+        summary.put("targets", targets)
+            .put("meets", meets(summary.getDouble("detectionRate"), cannyIouMedian))
+            .put("daMeets", meets(summary.getDouble("daDetectionRate"), daIouMedian))
+            .put("lfMeets", meets(summary.getDouble("lfDetectionRate"), lfIouMedian))
         File(outDir, "results.json").writeText(
             JSONObject()
                 .put("images", results)
@@ -192,6 +268,12 @@ class DocumentEvalBenchmark {
         val bmp = BitmapFactory.decodeFile(source.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
             ?: return null
         return Decoded(bmp, bounds.outWidth, bounds.outHeight)
+    }
+
+    /** Median (lower-middle for even counts) of latency samples, 0 when empty. */
+    private fun medianOf(samples: List<Long>): Long {
+        if (samples.isEmpty()) return 0
+        return samples.sorted()[(samples.size - 1) / 2]
     }
 
     /** Percentile by rank on an ascending-sorted list. */

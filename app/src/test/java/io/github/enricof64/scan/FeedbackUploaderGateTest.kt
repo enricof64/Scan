@@ -38,6 +38,8 @@ class FeedbackUploaderGateTest {
         override suspend fun setFilterDefault(filterId: String) = Unit
         override val autoCaptureEnabled = MutableStateFlow(false)
         override suspend fun setAutoCaptureEnabled(enabled: Boolean) {}
+        override val learnedDetectorEnabled = MutableStateFlow(false)
+        override suspend fun setLearnedDetectorEnabled(enabled: Boolean) {}
         override val themeMode: Flow<String> = MutableStateFlow(ThemeMode.AUTO)
         override suspend fun setThemeMode(mode: String) = Unit
     }

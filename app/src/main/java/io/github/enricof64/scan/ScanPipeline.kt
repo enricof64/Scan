@@ -41,8 +41,39 @@ object ScanPipeline {
      */
     var quadDebugSink: ((List<Map<String, Any?>>) -> Unit)? = null
 
-    /** Returns TL, TR, BR, BL corner coordinates in source-bitmap space, or null. */
-    fun detectQuad(src: Bitmap): FloatArray? = QuadDetector.detect(src)
+    /**
+     * Optional learned-detector adapter (F5): when set, [detectQuad] with
+     * [learnedFirst] tries it before the Canny detector. Set once at app
+     * startup (the ONNX model needs the app context); null in unit tests
+     * unless injected.
+     */
+    var learnedDetector: ((Bitmap) -> FloatArray?)? = null
+
+    /**
+     * Returns TL, TR, BR, BL corner coordinates in source-bitmap space, or
+     * null. With [learnedFirst] (F5, opt-in in Settings) the learned detector
+     * is tried first and its answer is used unless it is a hard failure;
+     * otherwise the Canny v19 detector runs. Default false: byte-identical to
+     * the historic Canny-only path.
+     */
+    fun detectQuad(src: Bitmap, learnedFirst: Boolean = false): FloatArray? {
+        if (learnedFirst) {
+            val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
+            if (acceptLearnedQuad(learned, src.width, src.height)) return learned
+        }
+        return QuadDetector.detect(src)
+    }
+
+    /**
+     * F5 learned-first strategy: trust the learned detector's answer unless
+     * it is a [QuadPlausibility] hard failure (non-convex, tiny, or garbage
+     * — an answer the warp would break on). Soft flags (angles, aspect,
+     * border) do not block: the Canny path would raise the same flags on its
+     * own answer, and the review UI handles flagged pages. Pure geometry,
+     * unit-tested.
+     */
+    fun acceptLearnedQuad(learned: FloatArray?, frameWidth: Int, frameHeight: Int): Boolean =
+        !QuadPlausibility.check(learned, frameWidth, frameHeight).hardFail
 
     /** Perspective-warps [src] through [quad] (TL, TR, BR, BL) into a rect bitmap. */
     fun crop(src: Bitmap, quad: FloatArray): Bitmap = Perspective.warpToRect(src, quad)

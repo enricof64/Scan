@@ -50,4 +50,25 @@ class SettingsRepositoryDefaultOffTest {
         repository.setFeedbackUploadEnabled(false)
         assertFalse(repository.feedbackUploadEnabled.first())
     }
+
+    @Test
+    fun `learned detector default constant is off`() {
+        assertEquals(false, DataStoreSettingsRepository.DEFAULT_LEARNED_DETECTOR_ENABLED)
+    }
+
+    @Test
+    fun `empty datastore exposes learned detector as disabled`() = runBlocking {
+        val repository = repositoryInTempDir()
+        assertFalse(repository.learnedDetectorEnabled.first())
+    }
+
+    @Test
+    fun `learned detector toggle persists and can be turned off again`() = runBlocking {
+        val repository = repositoryInTempDir()
+        assertFalse(repository.learnedDetectorEnabled.first())
+        repository.setLearnedDetectorEnabled(true)
+        assertTrue(repository.learnedDetectorEnabled.first())
+        repository.setLearnedDetectorEnabled(false)
+        assertFalse(repository.learnedDetectorEnabled.first())
+    }
 }

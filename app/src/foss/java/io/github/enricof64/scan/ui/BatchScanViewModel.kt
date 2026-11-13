@@ -165,7 +165,11 @@ class BatchScanViewModel(
         if (!analyzing.compareAndSet(false, true)) return
         viewModelScope.launch(detectContext) {
             try {
-                val quad = runCatching { ScanPipeline.detectQuad(bitmap) }.getOrNull()
+                // F5 learned detector (opt-in, default off): DataStore-cached,
+                // same read pattern as the auto-capture toggle below.
+                val learnedOn = runCatching { settings.learnedDetectorEnabled.first() }
+                    .getOrDefault(false)
+                val quad = runCatching { ScanPipeline.detectQuad(bitmap, learnedOn) }.getOrNull()
                 val stable = quad != null && isStable(quad, lastQuad, bitmap.width, bitmap.height)
                 lastQuad = quad
                 lastQuadFrame = bitmap.width to bitmap.height
@@ -298,12 +302,15 @@ class BatchScanViewModel(
     }
 
     /** Refine, store and append the accepted frame (runs on the detect thread). */
-    private fun acceptPage(still: Bitmap, blurFlagged: Boolean) {
+    private suspend fun acceptPage(still: Bitmap, blurFlagged: Boolean) {
         try {
             val live = scaleQuad(lastQuad, lastQuadFrame, still.width, still.height)
+            // F5: refine with the same detector strategy as the viewfinder.
+            val learnedOn = runCatching { settings.learnedDetectorEnabled.first() }
+                .getOrDefault(false)
             // Post-capture refinement (item 8b): a slower full-res pass
             // with plausibility checks; falls back to the live quad.
-            val refined = runCatching { CaptureRefine.refine(still, live) }.getOrNull()
+            val refined = runCatching { CaptureRefine.refine(still, live, learnedOn) }.getOrNull()
             val quad = refined?.quad ?: live
             val file = File(batchDir, "page-${nextId}.jpg")
             Images.saveJpeg(still, file)
@@ -383,7 +390,10 @@ class BatchScanViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val decoded = Images.decodeScaled(page.file, AUTODETECT_MAX_DIM)
                 ?: return@launch
-            val quad = runCatching { ScanPipeline.detectQuad(decoded) }.getOrNull()
+            // F5: same learned-first strategy as the viewfinder when on.
+            val learnedOn = runCatching { settings.learnedDetectorEnabled.first() }
+                .getOrDefault(false)
+            val quad = runCatching { ScanPipeline.detectQuad(decoded, learnedOn) }.getOrNull()
                 ?.let { scaleQuad(it, decoded.width to decoded.height, page.frameWidth, page.frameHeight) }
             decoded.recycle()
             if (quad != null) {

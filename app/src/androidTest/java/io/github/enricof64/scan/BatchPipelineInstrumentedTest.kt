@@ -75,6 +75,8 @@ class BatchPipelineInstrumentedTest {
                 override suspend fun setFilterDefault(filterId: String) {}
                 override val autoCaptureEnabled = MutableStateFlow(false)
                 override suspend fun setAutoCaptureEnabled(enabled: Boolean) {}
+                override val learnedDetectorEnabled = MutableStateFlow(false)
+                override suspend fun setLearnedDetectorEnabled(enabled: Boolean) {}
                 override val themeMode = MutableStateFlow(ThemeMode.AUTO)
                 override suspend fun setThemeMode(mode: String) = Unit
             },
