@@ -64,6 +64,17 @@ interface SettingsRepository {
     suspend fun setAutoCaptureEnabled(enabled: Boolean)
 
     /**
+     * Learned detector (F5): when on, capture detection tries the bundled
+     * DocAligner (ONNX) model first and falls back to the Canny detector
+     * when the model returns nothing usable. Default OFF: the Canny v19
+     * detector stays production until the on-device benchmark verdict
+     * (docs/EVALUATION.md, "F5") shows a clear DocAligner win.
+     */
+    val learnedDetectorEnabled: Flow<Boolean>
+
+    suspend fun setLearnedDetectorEnabled(enabled: Boolean)
+
+    /**
      * App theme: [io.github.enricof64.scan.ui.theme.ThemeMode.AUTO] follows
      * the system setting, LIGHT/DARK force a scheme. Default AUTO.
      */
@@ -112,6 +123,13 @@ class DataStoreSettingsRepository(
         dataStore.edit { prefs -> prefs[AUTO_CAPTURE_ENABLED] = enabled }
     }
 
+    override val learnedDetectorEnabled: Flow<Boolean> =
+        dataStore.data.map { prefs -> prefs[LEARNED_DETECTOR_ENABLED] ?: DEFAULT_LEARNED_DETECTOR_ENABLED }
+
+    override suspend fun setLearnedDetectorEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[LEARNED_DETECTOR_ENABLED] = enabled }
+    }
+
     override val themeMode: Flow<String> =
         dataStore.data.map { prefs -> prefs[THEME_MODE] ?: DEFAULT_THEME_MODE }
 
@@ -135,6 +153,9 @@ class DataStoreSettingsRepository(
         /** Manual shutter is the primary flow; auto-capture is opt-in. */
         const val DEFAULT_AUTO_CAPTURE_ENABLED = false
 
+        /** Canny stays production until the F5 benchmark verdict flips it. */
+        const val DEFAULT_LEARNED_DETECTOR_ENABLED = false
+
         /** Theme follows the system unless the user overrides it. */
         const val DEFAULT_THEME_MODE = "auto"
 
@@ -143,6 +164,7 @@ class DataStoreSettingsRepository(
         private val DEVELOPER_MODE_ENABLED = booleanPreferencesKey("developer_mode_enabled")
         private val FILTER_DEFAULT = stringPreferencesKey("filter_default")
         private val AUTO_CAPTURE_ENABLED = booleanPreferencesKey("auto_capture_enabled")
+        private val LEARNED_DETECTOR_ENABLED = booleanPreferencesKey("learned_detector_enabled")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
 
         /** File-backed preference DataStore used by [io.github.enricof64.scan.data.AppContainer]. */

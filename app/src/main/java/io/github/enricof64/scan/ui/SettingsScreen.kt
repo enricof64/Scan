@@ -96,6 +96,18 @@ class SettingsViewModel(
         viewModelScope.launch { settings.setAutoCaptureEnabled(enabled) }
     }
 
+    /**
+     * Learned detector (F5): tries the bundled DocAligner model before the
+     * Canny detector when capturing. Off until the on-device benchmark
+     * verdict shows a clear DocAligner win.
+     */
+    val learnedDetectorEnabled: StateFlow<Boolean> = settings.learnedDetectorEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setLearnedDetectorEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setLearnedDetectorEnabled(enabled) }
+    }
+
     /** Theme override; follows the system until the user picks one. */
     val themeMode: StateFlow<String> = settings.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.AUTO)
@@ -126,6 +138,7 @@ fun SettingsScreen(
     val developerMode by viewModel.developerModeEnabled.collectAsState()
     val filterDefault by viewModel.filterDefault.collectAsState()
     val autoCapture by viewModel.autoCaptureEnabled.collectAsState()
+    val learnedDetector by viewModel.learnedDetectorEnabled.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val uploadStats by viewModel.uploadStats.collectAsState()
     val updateState by updateMonitor.state.collectAsState()
@@ -201,6 +214,17 @@ fun SettingsScreen(
                     "with the Take photo shutter instead.",
                 checked = autoCapture,
                 onCheckedChange = { viewModel.setAutoCaptureEnabled(it) },
+                modifier = Modifier.padding(top = 16.dp),
+            )
+
+            SettingSwitchRow(
+                title = "Learned detector (experimental)",
+                description = "Try the on-device DocAligner model before the classic " +
+                    "detector when detecting corners. It falls back to the classic " +
+                    "detector whenever it finds nothing usable. The first frame " +
+                    "after enabling is slower (model load). Off by default.",
+                checked = learnedDetector,
+                onCheckedChange = { viewModel.setLearnedDetectorEnabled(it) },
                 modifier = Modifier.padding(top = 16.dp),
             )
 
