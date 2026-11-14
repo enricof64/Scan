@@ -25,5 +25,10 @@ local.properties
 /.sqltmp/
 /.apkcheck/
 /.pylibs/
+# local OCR reference workspace (models, venv, eval corpus staging)
+/.ocr-models/
+/.ocr-venv/
+/.eval-corpus/
+/.eval-corpus-f5/
 # user chat attachments are never committed
 /.uploads/
