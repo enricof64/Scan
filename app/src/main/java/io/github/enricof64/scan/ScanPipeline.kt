@@ -11,6 +11,7 @@ import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Scalar
 import org.opencv.core.Size
+import org.opencv.geometry.Geometry
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -545,10 +546,10 @@ private object QuadDetector {
         val amContours = ArrayList<MatOfPoint>()
         Imgproc.findContours(am, amContours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
         am.release()
-        for ((ai, ac) in amContours.sortedByDescending { Imgproc.contourArea(it) }
+        for ((ai, ac) in amContours.sortedByDescending { Geometry.contourArea(it) }
             .take(AMAX_MAX_COMPS).withIndex()
         ) {
-            if (Imgproc.contourArea(ac) < 0.04 * frameArea) break
+            if (Geometry.contourArea(ac) < 0.04 * frameArea) break
             hullQuad(ac)?.let { qam ->
                 add(cands, qam, 1.0, edgeSupport(qam, dilEdges[0]!!), 0, frameQ, frameArea, scenePap, hsv, lastResort = false, dbg = dbg, src = "amax$ai")
             }
@@ -581,15 +582,15 @@ private object QuadDetector {
         rawEdges[0]?.let { bestEdges ->
             val contours0 = ArrayList<MatOfPoint>()
             Imgproc.findContours(bestEdges, contours0, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            val big = contours0.maxByOrNull { Imgproc.contourArea(it) }
-            if (big != null && Imgproc.contourArea(big) > 0.015 * frameArea) {
-                val rot = Imgproc.minAreaRect(MatOfPoint2f(*big.toArray()))
+            val big = contours0.maxByOrNull { Geometry.contourArea(it) }
+            if (big != null && Geometry.contourArea(big) > 0.015 * frameArea) {
+                val rot = Geometry.minAreaRect(MatOfPoint2f(*big.toArray()))
                 if (rot.size.width >= 1 && rot.size.height >= 1) {
                     val pts = Array(4) { org.opencv.core.Point() }
                     rot.points(pts)
                     val q = orderCorners(pts.map { it.x to it.y })
                     val qa = max(polyArea(q), 1e-6)
-                    val fill = min(1.0, Imgproc.contourArea(big) / qa)
+                    val fill = min(1.0, Geometry.contourArea(big) / qa)
                     // Loose fill is fine — side extension grows the rect back
                     // over the paper, and the frame-promotion above handles
                     // sliver rects.
@@ -910,17 +911,17 @@ private object QuadDetector {
         frameArea: Double,
     ): List<Pair<DoubleArray, Double>> {
         val out = ArrayList<Pair<DoubleArray, Double>>()
-        val big = contours.sortedByDescending { Imgproc.contourArea(it) }
+        val big = contours.sortedByDescending { Geometry.contourArea(it) }
         for (c in big) {
-            val ca = Imgproc.contourArea(c)
+            val ca = Geometry.contourArea(c)
             if (ca < MIN_AREA_FRAC * frameArea) break
             quadFromContour(c)?.let { out.add(it to ca) }
         }
         val seen = HashSet<String>()
         for (c in big) {
-            val ca = Imgproc.contourArea(c)
+            val ca = Geometry.contourArea(c)
             if (ca < MIN_AREA_FRAC * frameArea) break
-            val rot = Imgproc.minAreaRect(MatOfPoint2f(*c.toArray()))
+            val rot = Geometry.minAreaRect(MatOfPoint2f(*c.toArray()))
             if (rot.size.width < 1 || rot.size.height < 1) continue
             val pts = Array(4) { org.opencv.core.Point() }
             rot.points(pts)
@@ -934,12 +935,12 @@ private object QuadDetector {
     /** First convex quad across approximation coarseness, else null. */
     private fun quadFromContour(contour: MatOfPoint): DoubleArray? {
         val pts = MatOfPoint2f(*contour.toArray())
-        val peri = Imgproc.arcLength(pts, true)
+        val peri = Geometry.arcLength(pts, true)
         if (peri <= 0.0) return null
         for (eps in intArrayOf(1, 2, 3, 5, 8, 12)) {
             val approx = MatOfPoint2f()
-            Imgproc.approxPolyDP(pts, approx, eps * 0.01 * peri, true)
-            if (approx.total() == 4L && Imgproc.isContourConvex(MatOfPoint(*approx.toArray()))) {
+            Geometry.approxPolyDP(pts, approx, eps * 0.01 * peri, true)
+            if (approx.total() == 4L && Geometry.isContourConvex(MatOfPoint(*approx.toArray()))) {
                 val q = orderCorners(approx.toArray().map { it.x to it.y })
                 if (polyArea(q) > 0.0) return q
             }
@@ -953,17 +954,17 @@ private object QuadDetector {
      *  approx should ignore. */
     private fun hullQuad(contour: MatOfPoint): DoubleArray? {
         val hullIdx = MatOfInt()
-        Imgproc.convexHull(contour, hullIdx)
+        Geometry.convexHull(contour, hullIdx)
         if (hullIdx.empty()) return null
         val contourPts = contour.toArray()
         val hullPts = hullIdx.toArray().map { contourPts[it] }.toTypedArray()
         if (hullPts.isEmpty()) return null
         val pts = MatOfPoint2f(*hullPts)
-        val peri = Imgproc.arcLength(pts, true)
+        val peri = Geometry.arcLength(pts, true)
         if (peri <= 0.0) return null
         for (eps in intArrayOf(1, 2, 3, 5, 8)) {
             val approx = MatOfPoint2f()
-            Imgproc.approxPolyDP(pts, approx, eps * 0.01 * peri, true)
+            Geometry.approxPolyDP(pts, approx, eps * 0.01 * peri, true)
             if (approx.total() <= 6L) {
                 if (approx.total() == 4L) {
                     val q = orderCorners(approx.toArray().map { it.x to it.y })
@@ -972,7 +973,7 @@ private object QuadDetector {
                 break
             }
         }
-        val rot = Imgproc.minAreaRect(pts)
+        val rot = Geometry.minAreaRect(pts)
         if (rot.size.width < 1 || rot.size.height < 1) return null
         val rp = Array(4) { org.opencv.core.Point() }
         rot.points(rp)
@@ -995,11 +996,11 @@ private object QuadDetector {
         Imgproc.findContours(dil, contours, Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
         dil.release()
         val out = ArrayList<Pair<DoubleArray, Double>>()
-        for (c in contours.sortedByDescending { Imgproc.contourArea(it) }) {
-            val ca = Imgproc.contourArea(c)
+        for (c in contours.sortedByDescending { Geometry.contourArea(it) }) {
+            val ca = Geometry.contourArea(c)
             if (ca < minAreaFrac * frameArea) break
             val q = quadFromContour(c) ?: run {
-                val rot = Imgproc.minAreaRect(MatOfPoint2f(*c.toArray()))
+                val rot = Geometry.minAreaRect(MatOfPoint2f(*c.toArray()))
                 if (rot.size.width < 1 || rot.size.height < 1) return@run null
                 val pts = Array(4) { org.opencv.core.Point() }
                 rot.points(pts)
@@ -1058,8 +1059,8 @@ private object QuadDetector {
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_NONE)
         hierarchy.release(); mask.release()
         try {
-            val contour = contours.maxByOrNull { Imgproc.contourArea(it) } ?: return null
-            val area = Imgproc.contourArea(contour)
+            val contour = contours.maxByOrNull { Geometry.contourArea(it) } ?: return null
+            val area = Geometry.contourArea(contour)
             if (area < 0.55 * sw * sh) return null
             val points = contour.toArray()
             val tips = arrayOf(
@@ -1083,7 +1084,7 @@ private object QuadDetector {
                 if (near.size < 10) return null
                 val samples = MatOfPoint2f(*near.toTypedArray())
                 val line = Mat()
-                Imgproc.fitLine(samples, line, Imgproc.DIST_HUBER, 0.0, 0.01, 0.01)
+                Geometry.fitLine(samples, line, Geometry.DIST_HUBER, 0.0, 0.01, 0.01)
                 val values = FloatArray(4)
                 line.get(0, 0, values)
                 samples.release(); line.release()
@@ -1246,11 +1247,11 @@ private object QuadDetector {
         Imgproc.findContours(mask, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
         mask.release()
         if (contours.isEmpty()) return null
-        val comp = contours.maxByOrNull { Imgproc.contourArea(it) } ?: return null
-        if (Imgproc.contourArea(comp) < 0.04 * sw * sh) return null
+        val comp = contours.maxByOrNull { Geometry.contourArea(it) } ?: return null
+        if (Geometry.contourArea(comp) < 0.04 * sw * sh) return null
         // convexHull yields indices into comp; map them back to points
         val hullIdx = org.opencv.core.MatOfInt()
-        Imgproc.convexHull(comp, hullIdx)
+        Geometry.convexHull(comp, hullIdx)
         val compPts = comp.toArray()
         val hullPts = hullIdx.toArray().map { compPts[it.toInt()] }
         hullIdx.release()
@@ -1260,12 +1261,12 @@ private object QuadDetector {
         var approx = hull2f
         for (eps in intArrayOf(1, 2, 3, 5, 8)) {
             val a = MatOfPoint2f()
-            Imgproc.approxPolyDP(hull2f, a, eps * 0.01 * Imgproc.arcLength(hull2f, true), true)
+            Geometry.approxPolyDP(hull2f, a, eps * 0.01 * Geometry.arcLength(hull2f, true), true)
             approx = a
             if (a.total() <= 6L) break
         }
         if (approx.total() == 4L) return orderCorners(approx.toArray().map { it.x to it.y })
-        val rot = Imgproc.minAreaRect(hull2f)
+        val rot = Geometry.minAreaRect(hull2f)
         if (rot.size.width < 1 || rot.size.height < 1) return null
         val boxPts = Array(4) { org.opencv.core.Point() }
         rot.points(boxPts)
@@ -1292,10 +1293,10 @@ private object QuadDetector {
         Imgproc.findContours(mask, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
         mask.release()
         if (contours.isEmpty()) return null
-        val comp = contours.maxByOrNull { Imgproc.contourArea(it) } ?: return null
-        if (Imgproc.contourArea(comp) < 0.04 * sw * sh) return null
+        val comp = contours.maxByOrNull { Geometry.contourArea(it) } ?: return null
+        if (Geometry.contourArea(comp) < 0.04 * sw * sh) return null
         val hullIdx = org.opencv.core.MatOfInt()
-        Imgproc.convexHull(comp, hullIdx)
+        Geometry.convexHull(comp, hullIdx)
         val compPts = comp.toArray()
         val hullPts = hullIdx.toArray().map { compPts[it.toInt()] }
         hullIdx.release()
@@ -1304,12 +1305,12 @@ private object QuadDetector {
         var approx = hull2f
         for (eps in intArrayOf(1, 2, 3, 5, 8)) {
             val a = MatOfPoint2f()
-            Imgproc.approxPolyDP(hull2f, a, eps * 0.01 * Imgproc.arcLength(hull2f, true), true)
+            Geometry.approxPolyDP(hull2f, a, eps * 0.01 * Geometry.arcLength(hull2f, true), true)
             approx = a
             if (a.total() <= 6L) break
         }
         if (approx.total() == 4L) return orderCorners(approx.toArray().map { it.x to it.y })
-        val rot = Imgproc.minAreaRect(hull2f)
+        val rot = Geometry.minAreaRect(hull2f)
         if (rot.size.width < 1 || rot.size.height < 1) return null
         val boxPts = Array(4) { org.opencv.core.Point() }
         rot.points(boxPts)
@@ -1383,12 +1384,12 @@ private object QuadDetector {
         texMask.release()
 
         val out = ArrayList<Pair<DoubleArray, Double>>()
-        val sorted = contours.sortedByDescending { Imgproc.contourArea(it) }
+        val sorted = contours.sortedByDescending { Geometry.contourArea(it) }
         for (c in sorted.take(TEXTURE_MAX_COMPS)) {
-            val ca = Imgproc.contourArea(c)
+            val ca = Geometry.contourArea(c)
             if (ca < TEXTURE_MIN_FRAC * frameArea) break
             val hullIdx = org.opencv.core.MatOfInt()
-            Imgproc.convexHull(c, hullIdx)
+            Geometry.convexHull(c, hullIdx)
             val cPts = c.toArray()
             val hullPts = hullIdx.toArray().map { cPts[it.toInt()] }
             hullIdx.release()
@@ -1396,7 +1397,7 @@ private object QuadDetector {
             var approx = hull2f
             for (eps in intArrayOf(2, 3, 5, 8)) {
                 val a = MatOfPoint2f()
-                Imgproc.approxPolyDP(hull2f, a, eps * 0.01 * Imgproc.arcLength(hull2f, true), true)
+                Geometry.approxPolyDP(hull2f, a, eps * 0.01 * Geometry.arcLength(hull2f, true), true)
                 approx = a
                 if (a.total() <= 6L) break
             }
@@ -1404,7 +1405,7 @@ private object QuadDetector {
             if (approx.total() == 4L) {
                 q = orderCorners(approx.toArray().map { it.x to it.y })
             } else {
-                val rot = Imgproc.minAreaRect(hull2f)
+                val rot = Geometry.minAreaRect(hull2f)
                 if (rot.size.width >= 1 && rot.size.height >= 1) {
                     val boxPts = Array(4) { org.opencv.core.Point() }
                     rot.points(boxPts)
@@ -1508,7 +1509,7 @@ private object QuadDetector {
             if (m < minCount) continue
             val mat = MatOfPoint2f(*Array(m) { org.opencv.core.Point(fx[it].toDouble(), fy[it].toDouble()) })
             val line = Mat()
-            Imgproc.fitLine(mat, line, Imgproc.DIST_HUBER, 0.0, 0.01, 0.01)
+            Geometry.fitLine(mat, line, Geometry.DIST_HUBER, 0.0, 0.01, 0.01)
             // fitLine emits CV_32F: (vx, vy, x0, y0)
             val lf = FloatArray(4)
             line.get(0, 0, lf)
@@ -1567,7 +1568,7 @@ private object QuadDetector {
             org.opencv.core.Point(outer[6], outer[7]),
         )
         val inter = Mat()
-        val area = Imgproc.intersectConvexConvex(a, b, inter, true)
+        val area = Geometry.intersectConvexConvex(a, b, inter, true)
         inter.release()
         val ai = polyArea(inner)
         return if (ai <= 0.0) 0.0 else area / ai

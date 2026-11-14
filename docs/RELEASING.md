@@ -114,6 +114,33 @@ with is the **upload key**. That is expected and good:
 - If you ever lose the upload keystore, you can reset it via Play Console
   support without losing the app — but do keep it backed up anyway.
 
+## 16 kB page size (Android 16+)
+
+Devices with a 16 kB kernel page size (Pixel 10 and later, Android 16+)
+refuse to run — or show a “not compatible with 16 kB page sizes” dialog on
+launch for — any APK whose native libraries are not 16 kB-ready. A library
+is 16 kB-ready when (a) every ELF `PT_LOAD` segment has `p_align >= 0x4000`
+and (b) the file is stored **uncompressed** in the APK at a 16 kB-aligned
+offset. Both are properties of the shipped `.so`, not of our Gradle config,
+so the requirement lands on dependency versions:
+
+- **OpenCV is pinned at `5.0.0.1`** — the last 4.x line ships
+  `libopencv_java4.so` and `libc++_shared.so` with 4 kB segment alignment,
+  which is exactly the pair that triggered the dialog. `5.0.0.1` ships both
+  16 kB-aligned. The Java API moved the contour/geometry helpers
+  (`contourArea`, `arcLength`, `approxPolyDP`, `convexHull`, `minAreaRect`,
+  `fitLine`, `isContourConvex`, `intersectConvexConvex`, `DIST_HUBER`) from
+  `Imgproc` to `org.opencv.geometry.Geometry` with unchanged signatures;
+  `ScanPipeline` calls them there. Do not downgrade OpenCV without re-checking
+  alignment.
+- The other native providers (onnxruntime-android, camera-*,
+  datastore, androidx.graphics.path) already ship 16 kB-aligned `.so` in the
+  pinned versions; AGP stores all of them uncompressed and aligns their
+  file offsets.
+- To verify an APK, unzip its `lib/arm64-v8a/*.so` and run
+  `readelf -lW <lib> | awk '/LOAD/ {print $NF}'` — every value must be
+  `0x4000` or larger.
+
 ## Per-release flow
 
 ### 1. Make sure main is green
