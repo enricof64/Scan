@@ -30,5 +30,8 @@ local.properties
 /.ocr-venv/
 /.eval-corpus/
 /.eval-corpus-f5/
+/ocr_extract_dict.py
+/ocr_inspect_onnx.py
+/ocr_ref_test.py
 # user chat attachments are never committed
 /.uploads/
