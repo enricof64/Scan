@@ -3,6 +3,7 @@ package io.github.enricof64.scan.ui
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import io.github.enricof64.scan.ocr.OcrEngine
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -167,7 +168,11 @@ class ExportViewModel(
         }
     }
 
-    /** Renders every page into one enhanced PDF, then offers the actions. */
+    /**
+     * Renders every page into one enhanced, searchable PDF (P1: OCR text
+     * layer), then offers the actions. OCR runs per page; a page whose OCR
+     * fails is still exported, without a text layer.
+     */
     fun exportPdf() {
         if (exporting.value) return
         exporting.value = true
@@ -179,7 +184,13 @@ class ExportViewModel(
                 val filters = effectiveFilters()
                 val out = files.sharedPdfFile(title)
                 withContext(Dispatchers.IO) {
-                    FileOutputStream(out).use { stream -> PdfExporter.exportPdf(pageFiles, filters, stream) }
+                    // P1: searchable PDF — OCR each page, then embed the text layer.
+                    val ocr = pageFiles.map { f ->
+                        runCatching { OcrEngine.recognizeFile(appContext, f) }.getOrNull()
+                    }
+                    FileOutputStream(out).use { stream ->
+                        PdfExporter.exportPdf(pageFiles, filters, stream, ocr)
+                    }
                 }
                 exportReady.value = out
             } catch (t: Throwable) {

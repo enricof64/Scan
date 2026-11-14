@@ -1,0 +1,25 @@
+OpenScan — bundled OCR models (assets/ocr)
+
+Files:
+  ppocrv5_det.onnx    PP-OCRv5 mobile text detection (DB), ONNX
+  ppocrv5_rec.onnx    PP-OCRv5 mobile text recognition (CRNN/CTC), ONNX
+  rec_char_dict.txt   recognition character dictionary (18383 chars)
+  LICENSE             Apache License 2.0 (governs the model weights)
+
+Provenance:
+  PaddleOCR PP-OCRv5 mobile models, PaddlePaddle (Apache-2.0),
+  exported to ONNX and redistributed by PaddlePaddle on Hugging Face:
+    https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
+    https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx
+  (license tag: apache-2.0, verified 2026-11-14)
+
+Pre-/post-processing (OcrEngine.kt, CtcDecode.kt) follows the upstream
+inference recipe:
+  det: resize long side to 960 (multiple of 32), ImageNet-style
+       normalization (mean 0.485/0.456/0.406, std 0.229/0.224/0.225, in BGR
+       channel order), DB binarization (thresh 0.3, box thresh 0.6,
+       unclip ratio 1.5).
+  rec: 48 px height (width capped by batch aspect), 0.5/0.5 normalization,
+       greedy CTC decode over the dictionary above.
+Reference validation: Python reference implementation (onnxruntime) on the
+docs/eval corpus — see docs/EVALUATION.md.
