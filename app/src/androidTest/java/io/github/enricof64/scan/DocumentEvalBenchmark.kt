@@ -15,7 +15,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -94,9 +93,20 @@ class DocumentEvalBenchmark {
                 record.put("scene", entry.optString("scene", ""))
 
                 // DocAligner as a second candidate source (plan F3).
+                // Diagnostics (F5): when the model returns no quad, the
+                // per-channel heatmap peaks say whether the model was flat
+                // (low confidence) or the pipeline dropped a valid quad.
                 val daT0 = System.currentTimeMillis()
-                val daQuad = DocAligner.detectQuad(context, src)
+                val daHm = DocAligner.heatmap(context, src)
+                val daQuad = daHm?.let { DocAligner.cornersFromHeatmaps(it, src.width, src.height) }
                 record.put("daMs", System.currentTimeMillis() - daT0)
+                if (daQuad == null && daHm != null) {
+                    val peaks = (0 until 4).map { c ->
+                        String.format("%.3f", daHm.copyOfRange(c * 128 * 128, (c + 1) * 128 * 128).max())
+                    }
+                    record.put("daPeaks", JSONArray(peaks))
+                }
+                if (daQuad == null && daHm == null) record.put("daError", DocAligner.lastError ?: "heatmap-null")
                 daMsList.add(record.getLong("daMs"))
                 if (daQuad == null) {
                     record.put("daOk", false)
@@ -282,79 +292,18 @@ class DocumentEvalBenchmark {
         return sorted[(sorted.size * p).toInt().coerceIn(0, sorted.size - 1)]
     }
 
-    // ---- Ground-truth comparison: quad IoU (convex, normalized space) ---
+    // ---- Ground-truth comparison -----------------------------------------
 
     /**
-     * Intersection-over-union of two convex quads given as ordered
-     * (cyclic) point pairs in the same normalized space.
-     * Sutherland–Hodgman clipping; orientation is normalized to CCW first.
+     * Quad IoU of two cyclic point lists in the same (normalized) space,
+     * delegated to the unit-tested [QuadIou] (F5: the inlined Sutherland–
+     * Hodgman port dropped the entering point on an outside→inside
+     * transition and collapsed near-identical quads to a zero-area sliver).
      */
     private fun quadIou(a: List<Pair<Double, Double>>, b: List<Pair<Double, Double>>): Double {
-        val areaA = polyArea(a)
-        val areaB = polyArea(b)
-        if (areaA <= 1e-9 || areaB <= 1e-9) return 0.0
-        val areaI = polyArea(convexClip(a, b))
-        if (areaI <= 1e-9) return 0.0
-        return areaI / (areaA + areaB - areaI)
-    }
-
-    /** Shoelace formula, absolute area. */
-    private fun polyArea(pts: List<Pair<Double, Double>>): Double =
-        abs(signedArea(pts))
-
-    private fun signedArea(pts: List<Pair<Double, Double>>): Double {
-        var s = 0.0
-        for (i in pts.indices) {
-            val (x1, y1) = pts[i]
-            val (x2, y2) = pts[(i + 1) % pts.size]
-            s += x1 * y2 - x2 * y1
-        }
-        return s / 2.0
-    }
-
-    private fun ensureCCW(pts: List<Pair<Double, Double>>): List<Pair<Double, Double>> =
-        if (signedArea(pts) < 0) pts.reversed() else pts
-
-    private fun convexClip(subjectIn: List<Pair<Double, Double>>, clipIn: List<Pair<Double, Double>>): List<Pair<Double, Double>> {
-        var output = ensureCCW(subjectIn)
-        val clip = ensureCCW(clipIn)
-        for (e in clip.indices) {
-            val p1 = clip[e]
-            val p2 = clip[(e + 1) % clip.size]
-            val input = output
-            if (input.isEmpty()) break
-            output = mutableListOf()
-            for (i in input.indices) {
-                val cur = input[i]
-                val prev = input[(i + input.size - 1) % input.size]
-                val curIn = side(p1, p2, cur) >= 0
-                val prevIn = side(p1, p2, prev) >= 0
-                when {
-                    curIn && prevIn -> output.add(cur)
-                    curIn != prevIn -> output.add(lineLine(prev, cur, p1, p2))
-                }
-            }
-        }
-        return output
-    }
-
-    /** Cross product of (p2-p1) and (p-p1); >= 0 means p is left of p1->p2. */
-    private fun side(p1: Pair<Double, Double>, p2: Pair<Double, Double>, p: Pair<Double, Double>): Double =
-        (p2.first - p1.first) * (p.second - p1.second) - (p2.second - p1.second) * (p.first - p1.first)
-
-    /** Intersection of segments a1-a2 and b1-b2 (falls back to a2 if parallel). */
-    private fun lineLine(
-        a1: Pair<Double, Double>, a2: Pair<Double, Double>,
-        b1: Pair<Double, Double>, b2: Pair<Double, Double>,
-    ): Pair<Double, Double> {
-        val d1x = a2.first - a1.first
-        val d1y = a2.second - a1.second
-        val d2x = b2.first - b1.first
-        val d2y = b2.second - b1.second
-        val denom = d1x * d2y - d1y * d2x
-        if (abs(denom) < 1e-12) return a2
-        val t = ((b1.first - a1.first) * d2y - (b1.second - a1.second) * d2x) / denom
-        return (a1.first + t * d1x) to (a1.second + t * d1y)
+        val fa = FloatArray(8) { a[it / 2].let { p -> if (it % 2 == 0) p.first.toFloat() else p.second.toFloat() } }
+        val fb = FloatArray(8) { b[it / 2].let { p -> if (it % 2 == 0) p.first.toFloat() else p.second.toFloat() } }
+        return QuadIou.iou(fa, fb)
     }
 
     private fun saveJpeg(bitmap: Bitmap, dest: File) {
