@@ -16,6 +16,9 @@ local.properties
 .secrets/
 # local test corpus (third-party images, licenses vary) stays out of the repo
 /testdata/
+# local F5 eval corpus + on-device benchmark run outputs
+/.f5-corpus/
+/eval-*.json
 # local sandbox build toolchain, caches and scratch — never part of the repo
 /.toolchain/
 /.gradle-home/
