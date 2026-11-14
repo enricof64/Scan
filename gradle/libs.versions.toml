@@ -17,7 +17,7 @@ androidxTestCore = "1.6.1"
 androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
 uiautomator = "2.3.0"
-opencv = "4.10.0"
+opencv = "5.0.0.1"
 onnxruntime = "1.31.1"
 orgJson = "20240303"
 
