@@ -5,10 +5,13 @@ import org.junit.Test
 
 /**
  * F6 hybrid arbitration ([ScanPipeline.hybridPick]): the learned quad wins
- * only if it is plausible (no hard failure) AND out-supports the Canny quad
- * by more than [ScanPipeline.HYBRID_WIN_MARGIN]; every tie, close call and
- * rejected learned answer keeps the Canny quad. Pure geometry, synthetic
- * quads.
+ * only if its support clears the absolute floor
+ * [ScanPipeline.HYBRID_LEARNED_MIN_SUPPORT] (a collapsed quad that cuts
+ * across a printed page picks up content edges and must not be let
+ * through), it is plausible (no hard failure), AND it out-supports the
+ * Canny quad by more than [ScanPipeline.HYBRID_WIN_MARGIN]; every tie,
+ * close call and rejected learned answer keeps the Canny quad. Pure
+ * geometry, synthetic quads.
  */
 class HybridStrategyTest {
 
@@ -35,19 +38,34 @@ class HybridStrategyTest {
     }
 
     @Test
-    fun `learned out-supports Canny by more than the margin and wins`() {
-        same(good(), ScanPipeline.hybridPick(canny(), good(), 0.40, 0.51, w, h))
+    fun `learned above the floor and out-supporting Canny by more than the margin wins`() {
+        same(good(), ScanPipeline.hybridPick(canny(), good(), 0.40, 0.95, w, h))
+    }
+
+    @Test
+    fun `learned exactly at the floor still wins with a comfortable margin`() {
+        same(good(), ScanPipeline.hybridPick(canny(), good(), 0.50, ScanPipeline.HYBRID_LEARNED_MIN_SUPPORT, w, h))
+    }
+
+    @Test
+    fun `learned below the floor keeps Canny even with a huge support margin`() {
+        // The cc_08/09 failure mode: a collapsed learned quad whose sides
+        // cut across a printed page reaches ~0.86 support while the true
+        // full-bleed Canny quad sits at ~0.05 — the margin is enormous,
+        // only the absolute floor stops it.
+        same(canny(), ScanPipeline.hybridPick(canny(), good(), 0.05, 0.857, w, h))
     }
 
     @Test
     fun `exactly the margin is a tie and keeps Canny`() {
         val margin = ScanPipeline.HYBRID_WIN_MARGIN
-        same(canny(), ScanPipeline.hybridPick(canny(), good(), 0.40, 0.40 + margin, w, h))
+        val cannySup = 0.85
+        same(canny(), ScanPipeline.hybridPick(canny(), good(), cannySup, cannySup + margin, w, h))
     }
 
     @Test
     fun `weaker learned support keeps Canny`() {
-        same(canny(), ScanPipeline.hybridPick(canny(), good(), 0.60, 0.45, w, h))
+        same(canny(), ScanPipeline.hybridPick(canny(), good(), 0.95, 0.92, w, h))
     }
 
     @Test
@@ -69,12 +87,17 @@ class HybridStrategyTest {
     }
 
     @Test
-    fun `margin constant is sane`() {
+    fun `thresholds are sane`() {
         // The arbitration must be a real margin: zero margin would let
         // floating noise flip the winner, a margin over 1.0 is unreachable.
-        org.junit.Assert.assertTrue(ScanPipeline.HYBRID_WIN_MARGIN > 0.0)
-        org.junit.Assert.assertTrue(ScanPipeline.HYBRID_WIN_MARGIN < 1.0)
-        org.junit.Assert.assertTrue(ScanPipeline.HYBRID_CANNY_GATE > 0.0)
-        org.junit.Assert.assertTrue(ScanPipeline.HYBRID_CANNY_GATE <= 1.0)
+        assertTrue(ScanPipeline.HYBRID_WIN_MARGIN > 0.0)
+        assertTrue(ScanPipeline.HYBRID_WIN_MARGIN < 1.0)
+        assertTrue(ScanPipeline.HYBRID_CANNY_GATE > 0.0)
+        assertTrue(ScanPipeline.HYBRID_CANNY_GATE <= 1.0)
+        // The floor must sit above the gate: a Canny quad below the gate
+        // (< 0.80) can then only be overridden by a strongly-supported
+        // learned quad, which also makes the relative margin a formality.
+        assertTrue(ScanPipeline.HYBRID_LEARNED_MIN_SUPPORT > ScanPipeline.HYBRID_CANNY_GATE)
+        assertTrue(ScanPipeline.HYBRID_LEARNED_MIN_SUPPORT <= 1.0)
     }
 }

@@ -162,14 +162,24 @@ object ScanPipeline {
      *  this much to win the arbitration; ties and noise go to Canny. */
     const val HYBRID_WIN_MARGIN = 0.10
 
+    /** F6: absolute edge-support floor for the learned quad in the
+     *  arbitration. A learned quad may override a Canny quad only when its
+     *  own perimeter sits almost entirely on real edges. Corpus data:
+     *  DocAligner's collapsed quads (sides cutting across a printed page)
+     *  top out around 0.86, while quads on a true page border reach 0.91
+     *  and up — the floor sits between the two. Below it the Canny quad
+     *  is kept, no matter how much better-supported the learned one is. */
+    const val HYBRID_LEARNED_MIN_SUPPORT = 0.90
+
     /**
      * Returns TL, TR, BR, BL corner coordinates in source-bitmap space, or
      * null. [LearnedStrategy.OFF] (default) is byte-identical to the
      * historic Canny-only path. [LearnedStrategy.LEARNED_FIRST] (F5) tries
      * the learned detector first. [LearnedStrategy.HYBRID] (F6) runs Canny
      * first and consults the learned detector only when the Canny quad's
-     * edge support is doubtful; the learned quad wins only by out-supporting
-     * Canny by [HYBRID_WIN_MARGIN].
+     * edge support is doubtful; the learned quad wins only when its own
+     * support clears [HYBRID_LEARNED_MIN_SUPPORT] and it out-supports Canny
+     * by [HYBRID_WIN_MARGIN].
      */
     fun detectQuad(src: Bitmap, strategy: LearnedStrategy = LearnedStrategy.OFF): FloatArray? =
         when (strategy) {
@@ -227,10 +237,14 @@ object ScanPipeline {
 
     /**
      * F6 arbitration, pure geometry: given both quads and their perimeter
-     * edge support, pick the winner. The learned quad wins only if it is
-     * acceptable (no [QuadPlausibility] hard failure) AND out-supports
-     * Canny by more than [HYBRID_WIN_MARGIN]; every tie, close call and
-     * rejected learned answer keeps the Canny quad. Unit-tested.
+     * edge support, pick the winner. The learned quad wins only if its
+     * support clears the absolute floor [HYBRID_LEARNED_MIN_SUPPORT] (its
+     * sides must run along real edges in their own right — collapsed quads
+     * that cut across a printed page pick up content edges and must not be
+     * let through), it is acceptable (no [QuadPlausibility] hard failure)
+     * AND it out-supports Canny by more than [HYBRID_WIN_MARGIN]. Every
+     * tie, close call and rejected learned answer keeps the Canny quad.
+     * Unit-tested.
      */
     fun hybridPick(
         canny: FloatArray,
@@ -241,17 +255,22 @@ object ScanPipeline {
         frameHeight: Int,
     ): FloatArray {
         if (learned == null) return canny
+        if (learnedSupport < HYBRID_LEARNED_MIN_SUPPORT) return canny
         if (!acceptLearnedQuad(learned, frameWidth, frameHeight)) return canny
         return if (learnedSupport > cannySupport + HYBRID_WIN_MARGIN) learned else canny
     }
 
     /**
      * F6: perimeter edge support of an arbitrary quad in source-bitmap
-     * space, measured against the same Canny edge evidence the Canny v19
-     * detector runs on (downscaled to the work size, all four edge passes
-     * unioned). Mean per-side fraction of sampled points on/near an edge
-     * (14 samples per side, 3 px band): ~1.0 when every side runs along a
-     * real edge, ~0 when the quad cuts through flat space.
+     * space, measured against the primary and CLAHE Canny passes (same
+     * work size and thresholds as the Canny v19 detector, unioned). Mean
+     * per-side fraction of sampled points on/near an edge (14 samples per
+     * side, 3 px band): ~1.0 when every side runs along a real edge, ~0
+     * when the quad cuts through flat space. The intermediate threshold
+     * sets are deliberately excluded: they mostly add weak edges (printed
+     * content, texture) that would inflate the support of a quad crossing a
+     * page, and this pass runs on every doubtful image, so it must stay
+     * cheap.
      */
     fun edgeSupportOf(quad: FloatArray, src: Bitmap): Double {
         if (!OpenCVLoader.initLocal()) return 0.0
@@ -271,12 +290,11 @@ object ScanPipeline {
         val grayC = Mat()
         Imgproc.createCLAHE(3.0, Size(8.0, 8.0)).apply(gray, grayC)
         small.release()
-        // Union of all four edge passes: for judging an external quad, any
-        // pass finding an edge counts as support (the Canny pipeline scores
-        // each candidate on its own best pass, so the union is the
-        // leniency-fair reference).
-        val passes = ArrayList<Triple<Double, Double, Mat>>(CANNY_SETS.size + 1)
-        for (set in CANNY_SETS) passes.add(Triple(set.first, set.second, gray))
+        // Primary + CLAHE passes only (see the KDoc): the two passes that
+        // catch real page borders without the weak content edges of the
+        // intermediate threshold sets.
+        val passes = ArrayList<Triple<Double, Double, Mat>>(2)
+        passes.add(Triple(CANNY_SETS[0].first, CANNY_SETS[0].second, gray))
         passes.add(Triple(CLAHE_SET.first, CLAHE_SET.second, grayC))
         val union = Mat()
         for ((lo, hi, passGray) in passes) {
