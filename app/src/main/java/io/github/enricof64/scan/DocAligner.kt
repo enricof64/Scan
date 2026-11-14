@@ -1,5 +1,6 @@
 package io.github.enricof64.scan
 
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtLoggingLevel
@@ -7,8 +8,9 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
 import java.nio.ByteBuffer
-import java.nio.FloatBuffer
-import org.opencv.core.CvType
+import java.nio.ByteOrder
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
@@ -37,8 +39,11 @@ import org.opencv.imgproc.Imgproc
  */
 object DocAligner {
 
-    /** Bundled model asset path (LCNet100, 4,767,987 bytes). */
-    const val ASSET_MODEL = "assets/docaligner/docaligner-lcnet100.onnx"
+    /**
+     * Bundled model asset path (LCNet100, 4,767,987 bytes). Relative to the
+     * asset root — the leading `assets/` prefix does NOT belong there.
+     */
+    const val ASSET_MODEL = "docaligner/docaligner-lcnet100.onnx"
 
     /** Model input edge length (square, no aspect preservation). */
     const val INPUT_SIZE = 256
@@ -52,6 +57,19 @@ object DocAligner {
     private class Holder(val environment: OrtEnvironment, val session: OrtSession)
 
     private var holder: Holder? = null
+
+    /**
+     * Diagnostics only (F5 verdict): the most recent swallowed failure, if
+     * any. `null` when the last call succeeded or nothing has failed yet.
+     * Never used by production logic — the production contract is
+     * "never throws, null on failure".
+     */
+    @Volatile
+    var lastError: String? = null
+        private set
+
+    private fun stackOf(t: Throwable, n: Int): String =
+        t.stackTraceToString().lineSequence().take(n).joinToString(" / ")
 
     /**
      * TL, TR, BR, BL corner coordinates in source-bitmap space, or null when
@@ -69,44 +87,66 @@ object DocAligner {
      * row-major order (channel-first), or null on any failure.
      */
     fun heatmap(context: Context, src: Bitmap): FloatArray? {
+        if (!OpenCVLoader.initLocal()) return null
         val h = ensureSession(context) ?: return null
-        val rgba = Mat(src.height, src.width, CvType.CV_8UC4)
+        val rgba = Mat()
         val bgr = Mat()
         val small = Mat()
         try {
-            val pixels = IntArray(src.width * src.height)
-            src.getPixels(pixels, 0, src.width, 0, 0, src.width, src.height)
-            rgba.put(0, 0, pixels)
+            // OpenCV Android 4.10's Mat.put(IntArray) rejects CV_8UC4 mats
+            // ("data type is not compatible: 24", F5 on-device diagnosis);
+            // bitmapToMat is the same path ScanPipeline uses.
+            Utils.bitmapToMat(src, rgba)
             Imgproc.cvtColor(rgba, bgr, Imgproc.COLOR_RGBA2BGR)
             Imgproc.resize(bgr, small, Size(INPUT_SIZE.toDouble(), INPUT_SIZE.toDouble()), 0.0, 0.0, Imgproc.INTER_LINEAR)
 
-            val chw = FloatArray(3 * INPUT_SIZE * INPUT_SIZE)
             val raw = ByteArray(3 * INPUT_SIZE * INPUT_SIZE)
             small.get(0, 0, raw)
+            // ORT's tensor API requires a DIRECT (off-heap) buffer; a heap
+            // FloatBuffer.wrap(chw) throws "ByteBuffer is not direct" at
+            // session.run (F5 on-device diagnosis, 2026-07-14).
+            // Direct ByteBuffer + explicit FLOAT type: Android has no
+            // FloatBuffer.allocateDirect, and the plain createTensor(ByteBuffer,
+            // shape) overload infers byte type from the buffer (F5 on-device
+            // diagnosis: "buffer has 786432 elements").
+            val direct = ByteBuffer.allocateDirect(3 * INPUT_SIZE * INPUT_SIZE * 4)
+                .order(ByteOrder.nativeOrder())
             for (c in 0 until 3) {
-                val cOff = c * INPUT_SIZE * INPUT_SIZE
                 for (y in 0 until INPUT_SIZE) {
                     val row = y * INPUT_SIZE
                     for (x in 0 until INPUT_SIZE) {
-                        chw[cOff + row + x] = raw[(row + x) * 3 + c].toInt().and(0xFF) / 255f
+                        direct.putFloat(raw[(row + x) * 3 + c].toInt().and(0xFF) / 255f)
                     }
                 }
             }
 
+            // flip(): put() advanced position to the end; ORT's TensorInfo
+            // reads remaining() and requires the data at position 0.
+            direct.flip()
             val input = OnnxTensor.createTensor(
                 h.environment,
-                FloatBuffer.wrap(chw),
+                direct,
                 longArrayOf(1, 3, INPUT_SIZE.toLong(), INPUT_SIZE.toLong()),
+                OnnxJavaType.FLOAT,
             )
-            val result = h.session.run(mapOf("img" to input))
-            val out = result.get(0) as ai.onnxruntime.OnnxTensor
-            val heatmaps = FloatArray(4 * HEATMAP_SIZE * HEATMAP_SIZE)
-            val fb = out.getFloatBuffer()
-            fb.position(0)
-            for (i in heatmaps.indices) heatmaps[i] = fb.get()
-            result.close()
-            return heatmaps
+            try {
+                val result = h.session.run(mapOf("img" to input))
+                try {
+                    val out = result.get(0) as ai.onnxruntime.OnnxTensor
+                    val heatmaps = FloatArray(4 * HEATMAP_SIZE * HEATMAP_SIZE)
+                    val fb = out.getFloatBuffer()
+                    fb.position(0)
+                    for (i in heatmaps.indices) heatmaps[i] = fb.get()
+                    lastError = null
+                    return heatmaps
+                } finally {
+                    result.close()
+                }
+            } finally {
+                input.close()
+            }
         } catch (t: Throwable) {
+            lastError = t.toString() + " | " + stackOf(t, 4)
             return null
         } finally {
             rgba.release()
@@ -122,9 +162,13 @@ object DocAligner {
             val environment = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR)
             val bytes = context.assets.open(ASSET_MODEL).use { it.readBytes() }
             val options = OrtSession.SessionOptions().apply { setIntraOpNumThreads(2) }
-            val session = environment.createSession(ByteBuffer.wrap(bytes), options)
+            // ORT 1.31 dropped the InputStream overload, and the ByteBuffer
+            // overload requires a DIRECT buffer ("ByteBuffer is not direct",
+            // diagnosed on-device in F5). The byte[] overload is safe.
+            val session = environment.createSession(bytes, options)
             Holder(environment, session).also { holder = it }
         } catch (t: Throwable) {
+            lastError = t.toString() + " | " + stackOf(t, 4)
             null
         }
     }

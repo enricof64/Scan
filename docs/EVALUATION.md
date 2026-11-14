@@ -653,8 +653,60 @@ adb shell am instrument -w -e class io.github.enricof64.scan.DocumentEvalBenchma
 adb pull /data/data/io.github.enricof64.scan/files/eval out/
 ```
 
-**Verdict.** *(Pending the on-device run. To be filled in when
-`results.json` comes back: per-strategy detection / IoU / latency, the
-`meets*` booleans, the visual pass over the `lf_*` overlays, and the
-decision — flip `DEFAULT_LEARNED_DETECTOR_ENABLED` to true and document it
-here, or keep Canny production with DocAligner as the opt-in.)*
+**Verdict (on-device, Fold 8, 2026-11-14).** 64-image corpus (31
+synthetic with exact ground truth, 33 real Creative-Commons photos;
+`meets*` read straight off `results.json`):
+
+| strategy | detected | det. rate | IoU median | IoU p90 | IoU ≥ 0.9 | detect median |
+|---|---|---|---|---|---|---|
+| Canny v19 (production) | 64/64 | **1.000** ✅ | **0.963** ✅ | 0.995 | 45/64 | 145 ms |
+| DocAligner (standalone) | 43/64 | 0.672 ❌ | 0.938 | 0.963 | 34/43 | 64 ms |
+| learned-first + Canny fallback | 64/64 | **1.000** ✅ | 0.938 ✅ | 0.963 | 46/64 | 79 ms |
+
+Targets are detection ≥ 0.95 and IoU median ≥ 0.9. Canny v19 **meets
+both**; DocAligner standalone **fails detection** (0.672 < 0.95) and the
+combined strategy meets the booleans but its median (0.938) is 0.025 below
+Canny's.
+
+**Per scene.** Synthetic: DocAligner detects all 31 (IoU 0.890–0.973) and
+saves Canny's two near-total collapses on tilted photo pages (0.105→0.929,
+0.079→0.937); it costs Canny ≈ 0.03–0.04 IoU on the easy cases it wins on
+IoU (0.99x). Real photos: DocAligner detects only 12/33 — 21 images come
+back below its 0.3 peak-confidence threshold (peaks typically 0.01–0.37,
+matching a host-side ORT simulation of the same pipeline, so the model is
+telling the truth, not the code). Its wins are real (cc_12 0.226→0.890,
+cc_30 0.685→0.927, cc_16 0.361→0.701) but the learned-first policy also
+regresses where Canny is strong (cc_09 0.963→0.565 — the learned quad
+visually collapses through the page center; cc_06 0.861→0.774;
+cc_32 0.522→0.351): `acceptLearnedQuad` only blocks hard plausibility
+failures, so a plausible-but-wrong quad replaces a better Canny one.
+
+**Decision: keep Canny v19 the production detector** — the toggle stays
+off by default, DocAligner remains the opt-in "Learned detector
+(experimental)". Reasons: DocAligner misses the detection target on real
+photos; the learned-first combination has per-image regressions against
+Canny's strengths; and Canny already meets both plan targets on this
+corpus. The latency win of the combined path (79 ms vs 145 ms median) is
+not enough to buy a quality regression.
+
+**Diagnosis notes from this run (kept in the code as comments):**
+1. ORT 1.31.1 needs `createSession(byte[], …)` (no `InputStream`
+   overload) and the input tensor must be a **direct** buffer; a raw
+   `ByteBuffer` passed to `createTensor(…, shape)` is inferred as byte
+type — pass the 4-arg overload with `OnnxJavaType.FLOAT` (Android has no
+   `FloatBuffer.allocateDirect`).
+2. `DocAligner.heatmap` initializes OpenCV itself (`initLocal()`),
+   mirroring `ScanPipeline.detect` — it can be called outside the
+   capture flow.
+3. OpenCV Android 4.10's `Mat.put(IntArray)` rejects CV_8UC4 mats
+   ("data type is not compatible: 24"); use `Utils.bitmapToMat` like the
+   production path does.
+
+**Follow-up (not done, would be the right next step):** a *Canny-first
+with learned fallback* policy — run Canny, and only use the DocAligner
+quad when the Canny quad is weak (its plausibility soft-flags, or a
+Canny-specific confidence signal). The corpus data says that captures the
+DocAligner wins (the tilted-page and half-page cases) without the cc_09-
+style regressions, and keeps detection at 1.000. A second, larger
+real-world corpus (the CC set is mixed newspaper scans; the model was
+trained on modern document photos) would sharpen the call.
