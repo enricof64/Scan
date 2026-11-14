@@ -710,3 +710,44 @@ DocAligner wins (the tilted-page and half-page cases) without the cc_09-
 style regressions, and keeps detection at 1.000. A second, larger
 real-world corpus (the CC set is mixed newspaper scans; the model was
 trained on modern document photos) would sharpen the call.
+
+## F6: hybrid policy — Canny-first + learned second opinion (2026-11-14)
+
+**Spec (written before the run, per the F5 follow-up).** The F5 verdict kept
+Canny v19 in production because learned-first regresses where Canny is
+strong (cc_09 0.963→0.565) even though it fixes Canny's collapses
+(0.105→0.929). F6 keeps Canny as the primary answer and uses DocAligner
+only as a second opinion, arbitrated by the same perimeter edge evidence
+the Canny pipeline itself uses:
+
+1. `ScanPipeline.detectQuad(src, HYBRID)`: run Canny v19. No Canny quad →
+   DocAligner answer if it passes the hard plausibility gate, else null.
+2. Compute the Canny quad's **perimeter edge support**
+   (`edgeSupportOf`): mean per-side fraction of 14 sampled points on/near
+   a Canny edge (3 px band), measured on the union of all four Canny
+   passes at the working size — ~1.0 when every side runs along a real
+   edge, ~0 when the quad cuts through flat space.
+3. Support ≥ `HYBRID_CANNY_GATE` (0.80) → trust Canny as-is (fast path,
+   the common case, costs one extra edge pass).
+4. Support < 0.80 (doubtful) → ask DocAligner. The learned quad wins
+   only if it passes the hard plausibility gate AND out-supports the
+   Canny quad by more than `HYBRID_WIN_MARGIN` (0.10); every tie, close
+   call or rejected learned answer keeps Canny.
+5. `LearnedStrategy` enum (OFF / LEARNED_FIRST / HYBRID); the Settings
+   toggle "Learned detector (experimental)" now selects HYBRID; the
+   benchmark adds a `hy*` column next to the F5 `lf*` column.
+
+**Pre-declared decision rule (checked on the Fold 8 corpus, same 64
+images as F5, same command).** Hybrid flips the production default ON
+only if ALL hold:
+
+- `hyDetectionRate` ≥ 0.95 **and** ≥ Canny's rate (1.000 → must be 1.000);
+- `hyIouMedian` ≥ Canny's `iouMedian` (0.963);
+- `hyIouAbove09` ≥ Canny's `iouAbove09` (45);
+- no single image regresses by more than 0.05 IoU vs its own Canny value
+  (Canny detected that image);
+- `hyMsMedian` ≤ `detectMsMedian` + 40 ms (the support pass is the common
+  case overhead; DocAligner cost is paid only on doubtful images).
+
+If any of these fails, the default stays OFF (Canny v19 production) and
+this section records which criterion failed and the per-image diff table.

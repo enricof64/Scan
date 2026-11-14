@@ -35,16 +35,15 @@ object CaptureRefine {
     )
 
     /**
-     * [learnedFirst] (F5): when true, the full-res detection tries the
-     * learned detector before Canny (with its hard-failure fallback). The
-     * half-scale retry stays Canny: it exists to shift the edge response
+     * [learned] (F5/F6): which detector strategy the full-res pass uses.
+     * The half-scale retry stays Canny: it exists to shift the edge response
      * after the full-res pass failed, and the learned model has already
      * answered the full-res frame.
      */
-    fun refine(still: Bitmap, initial: FloatArray?, learnedFirst: Boolean = false): Result {
+    fun refine(still: Bitmap, initial: FloatArray?, learned: LearnedStrategy = LearnedStrategy.OFF): Result {
         val w = still.width
         val h = still.height
-        val fresh = runCatching { ScanPipeline.detectQuad(still, learnedFirst) }.getOrNull()
+        val fresh = runCatching { ScanPipeline.detectQuad(still, learned) }.getOrNull()
         if (fresh != null && QuadPlausibility.check(fresh, w, h).plausible) {
             val polished = runCatching { subpixelPolish(still, fresh) }.getOrNull() ?: fresh
             return Result(

@@ -219,10 +219,11 @@ fun SettingsScreen(
 
             SettingSwitchRow(
                 title = "Learned detector (experimental)",
-                description = "Try the on-device DocAligner model before the classic " +
-                    "detector when detecting corners. It falls back to the classic " +
-                    "detector whenever it finds nothing usable. The first frame " +
-                    "after enabling is slower (model load). Off by default.",
+                description = "Keep the classic detector as the main answer and ask " +
+                    "the on-device DocAligner model for a second opinion when the " +
+                    "classic result looks weak; the better-supported quad wins. " +
+                    "The first frame after enabling is slower (model load). Off " +
+                    "by default.",
                 checked = learnedDetector,
                 onCheckedChange = { viewModel.setLearnedDetectorEnabled(it) },
                 modifier = Modifier.padding(top = 16.dp),
