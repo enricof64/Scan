@@ -264,7 +264,7 @@ object ScanPipeline {
             val edges = Mat()
             Imgproc.Canny(passGray, edges, lo, hi)
             Imgproc.dilate(edges, edges, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0)))
-            Core.bitwise_or(union, edges, union)
+            if (union.empty()) edges.copyTo(union) else Core.bitwise_or(union, edges, union)
             edges.release()
         }
         val qw = DoubleArray(quad.size) { quad[it].toDouble() * scale }
