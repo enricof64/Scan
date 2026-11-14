@@ -179,7 +179,7 @@ object ScanPipeline {
                 if (acceptLearnedQuad(learned, src.width, src.height)) learned
                 else QuadDetector.detect(src)
             }
-            LearnedStrategy.HYBRID -> hybridDetect(src)
+            LearnedStrategy.HYBRID -> hybridDetect(src).quad
         }
 
     /**
@@ -193,17 +193,36 @@ object ScanPipeline {
      * right (0.963 -> 0.565); support arbitration keeps the wins and drops
      * the regressions.
      */
-    private fun hybridDetect(src: Bitmap): FloatArray? {
-        val canny = QuadDetector.detect(src) ?: return runCatching { learnedDetector?.invoke(src) }.getOrNull()
-            ?.takeIf { acceptLearnedQuad(it, src.width, src.height) }
+    /**
+     * F6 hybrid outcome: the winning quad plus the evidence, for
+     * diagnostics (the benchmark records the branch and per-quad supports).
+     */
+    data class HybridDecision(
+        val quad: FloatArray?,
+        /** canny-fast | canny-keep | learned-win | learned-only | none */
+        val branch: String,
+        val cannySupport: Double?,
+        val learnedSupport: Double?,
+    )
+
+    fun hybridDetect(src: Bitmap): HybridDecision {
+        val canny = QuadDetector.detect(src)
+        if (canny == null) {
+            val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
+            if (!acceptLearnedQuad(learned, src.width, src.height)) {
+                return HybridDecision(null, "none", null, null)
+            }
+            return HybridDecision(learned, "learned-only", null, learned?.let { edgeSupportOf(it, src) })
+        }
         val cannySup = edgeSupportOf(canny, src)
-        if (cannySup >= HYBRID_CANNY_GATE) return canny
+        if (cannySup >= HYBRID_CANNY_GATE) {
+            return HybridDecision(canny, "canny-fast", cannySup, null)
+        }
         val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
-        return hybridPick(
-            canny, learned, cannySup,
-            learned?.let { edgeSupportOf(it, src) } ?: 0.0,
-            src.width, src.height,
-        )
+        val learnedSup = learned?.let { edgeSupportOf(it, src) }
+        val picked = hybridPick(canny, learned, cannySup, learnedSup ?: 0.0, src.width, src.height)
+        val branch = if (learned != null && picked === learned) "learned-win" else "canny-keep"
+        return HybridDecision(picked, branch, cannySup, learnedSup)
     }
 
     /**

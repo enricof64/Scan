@@ -161,9 +161,13 @@ class DocumentEvalBenchmark {
                 // F6 combined strategy: Canny-first with the learned detector
                 // as second opinion, arbitrated by perimeter edge support.
                 val hyT0 = System.currentTimeMillis()
-                val hyQuad = ScanPipeline.detectQuad(src, LearnedStrategy.HYBRID)
+                val hyd = ScanPipeline.hybridDetect(src)
+                val hyQuad = hyd.quad
                 record.put("hyMs", System.currentTimeMillis() - hyT0)
                 hyMsList.add(record.getLong("hyMs"))
+                record.put("hyBranch", hyd.branch)
+                    .put("hyCannySup", hyd.cannySupport)
+                    .put("hyLearnedSup", hyd.learnedSupport)
                 if (hyQuad == null) {
                     record.put("hyOk", false)
                 } else {
