@@ -30,14 +30,17 @@ import kotlin.math.roundToInt
  * is available, the quad IoU in normalized space. It also runs the
  * DocAligner learned detector ([DocAligner.detectQuad]) on every image as a
  * second candidate source, so the two can be compared per scene from the
- * same run (F3). For the F5 detector verdict it also measures the COMBINED
- * learned-first strategy (`lf*` fields: learned detector with the Canny
- * fallback, exactly what the app runs when the Settings toggle is on —
- * unconditional here, since this run IS the verdict about it) and carries
- * per-strategy latency medians plus the plan's targets and a
- * `meetsTargets` boolean per strategy, so the verdict is read straight out
- * of the summary. Per-image overlays, crops, PDFs and a results.json land
- * in filesDir/eval for the host to pull. See docs/EVALUATION.md (F5).
+ * same run (F3). For the F5/F6 detector verdicts it also measures the
+ * COMBINED strategies: `lf*` (learned-first with the Canny fallback, the
+ * F5 candidate) and `hy*` (F6 Canny-first hybrid: Canny runs first, the
+ * learned detector is consulted only when the Canny quad's perimeter edge
+ * support is doubtful, and wins only by out-supporting Canny — what the app
+ * runs when the Settings toggle is on). Unconditional here, since this run
+ * IS the verdict about them; per-strategy latency medians plus the plan's
+ * targets and a `meetsTargets` boolean per strategy let the verdict be read
+ * straight out of the summary. Per-image overlays, crops, PDFs and a
+ * results.json land in filesDir/eval for the host to pull. See
+ * docs/EVALUATION.md (F5, F6).
  */
 @RunWith(AndroidJUnit4::class)
 class DocumentEvalBenchmark {
@@ -70,9 +73,12 @@ class DocumentEvalBenchmark {
         var daDetectedCount = 0
         val lfIous = mutableListOf<Double>()
         var lfDetectedCount = 0
+        val hyIous = mutableListOf<Double>()
+        var hyDetectedCount = 0
         val detectMsList = mutableListOf<Long>()
         val daMsList = mutableListOf<Long>()
         val lfMsList = mutableListOf<Long>()
+        val hyMsList = mutableListOf<Long>()
         val tAll = System.currentTimeMillis()
 
         val n = min(images.length(), maxImages)
@@ -127,10 +133,9 @@ class DocumentEvalBenchmark {
                     }
                 }
 
-                // F5 combined strategy: learned-first with the Canny fallback
-                // (what the app runs when the Settings toggle is on).
+                // F5 combined strategy: learned-first with the Canny fallback.
                 val lfT0 = System.currentTimeMillis()
-                val lfQuad = ScanPipeline.detectQuad(src, learnedFirst = true)
+                val lfQuad = ScanPipeline.detectQuad(src, LearnedStrategy.LEARNED_FIRST)
                 record.put("lfMs", System.currentTimeMillis() - lfT0)
                 lfMsList.add(record.getLong("lfMs"))
                 if (lfQuad == null) {
@@ -150,6 +155,36 @@ class DocumentEvalBenchmark {
                         val lfIou = quadIou(lfPts, gtPts)
                         lfIous.add(lfIou)
                         record.put("lfIou", lfIou)
+                    }
+                }
+
+                // F6 combined strategy: Canny-first with the learned detector
+                // as second opinion, arbitrated by perimeter edge support.
+                val hyT0 = System.currentTimeMillis()
+                val hyd = ScanPipeline.hybridDetect(src)
+                val hyQuad = hyd.quad
+                record.put("hyMs", System.currentTimeMillis() - hyT0)
+                hyMsList.add(record.getLong("hyMs"))
+                record.put("hyBranch", hyd.branch)
+                    .put("hyCannySup", hyd.cannySupport)
+                    .put("hyLearnedSup", hyd.learnedSupport)
+                if (hyQuad == null) {
+                    record.put("hyOk", false)
+                } else {
+                    record.put("hyOk", true)
+                    hyDetectedCount++
+                    record.put("hyQuad", JSONArray(hyQuad.map { it.roundToInt() }))
+                    saveJpeg(drawOverlay(src, hyQuad), File(overlaysDir, "hy_$name"))
+                    if (gt != null && gt.length() == 8) {
+                        val hyPts = (0 until 4).map {
+                            (hyQuad[it * 2].toDouble() / src.width) to (hyQuad[it * 2 + 1].toDouble() / src.height)
+                        }
+                        val gtPts = (0 until 4).map {
+                            (gt.getDouble(it * 2) / decoded.originalWidth) to (gt.getDouble(it * 2 + 1) / decoded.originalHeight)
+                        }
+                        val hyIou = quadIou(hyPts, gtPts)
+                        hyIous.add(hyIou)
+                        record.put("hyIou", hyIou)
                     }
                 }
 
@@ -236,10 +271,22 @@ class DocumentEvalBenchmark {
                 .put("lfIouP90", percentile(lfIousSorted, 0.90))
                 .put("lfIouAbove09", lfIousSorted.count { it >= 0.9 })
         }
+        // F6 combined (Canny-first hybrid) strategy.
+        summary.put("hyDetected", hyDetectedCount)
+            .put("hyDetectionRate", if (n > 0) hyDetectedCount.toDouble() / n else 0.0)
+        val hyIousSorted = hyIous.sorted()
+        val hyIouMedian: Double? =
+            hyIousSorted.takeIf { it.isNotEmpty() }?.let { percentile(it, 0.50) }
+        if (hyIousSorted.isNotEmpty()) {
+            summary.put("hyIouMedian", hyIouMedian)
+                .put("hyIouP90", percentile(hyIousSorted, 0.90))
+                .put("hyIouAbove09", hyIousSorted.count { it >= 0.9 })
+        }
         // Per-strategy latency (median ms over the run corpus).
         summary.put("detectMsMedian", medianOf(detectMsList))
             .put("daMsMedian", medianOf(daMsList))
             .put("lfMsMedian", medianOf(lfMsList))
+            .put("hyMsMedian", medianOf(hyMsList))
         // F5 verdict (plan targets): detection rate >= 95 % and corner IoU
         // median >= 0.9. The third target (manual corrections <= 5 %) needs
         // a user, so it is checked in the review grid, not here. `meets`
@@ -255,6 +302,7 @@ class DocumentEvalBenchmark {
             .put("meets", meets(summary.getDouble("detectionRate"), cannyIouMedian))
             .put("daMeets", meets(summary.getDouble("daDetectionRate"), daIouMedian))
             .put("lfMeets", meets(summary.getDouble("lfDetectionRate"), lfIouMedian))
+            .put("hyMeets", meets(summary.getDouble("hyDetectionRate"), hyIouMedian))
         File(outDir, "results.json").writeText(
             JSONObject()
                 .put("images", results)

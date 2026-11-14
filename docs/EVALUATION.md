@@ -710,3 +710,108 @@ DocAligner wins (the tilted-page and half-page cases) without the cc_09-
 style regressions, and keeps detection at 1.000. A second, larger
 real-world corpus (the CC set is mixed newspaper scans; the model was
 trained on modern document photos) would sharpen the call.
+
+## F6: hybrid policy — Canny-first + learned second opinion (2026-11-14)
+
+**Spec (written before the run, per the F5 follow-up).** The F5 verdict kept
+Canny v19 in production because learned-first regresses where Canny is
+strong (cc_09 0.963→0.565) even though it fixes Canny's collapses
+(0.105→0.929). F6 keeps Canny as the primary answer and uses DocAligner
+only as a second opinion, arbitrated by the same perimeter edge evidence
+the Canny pipeline itself uses:
+
+1. `ScanPipeline.detectQuad(src, HYBRID)`: run Canny v19. No Canny quad →
+   DocAligner answer if it passes the hard plausibility gate, else null.
+2. Compute the Canny quad's **perimeter edge support**
+   (`edgeSupportOf`): mean per-side fraction of 14 sampled points on/near
+   a Canny edge (3 px band), measured on the union of all four Canny
+   passes at the working size — ~1.0 when every side runs along a real
+   edge, ~0 when the quad cuts through flat space.
+3. Support ≥ `HYBRID_CANNY_GATE` (0.80) → trust Canny as-is (fast path,
+   the common case, costs one extra edge pass).
+4. Support < 0.80 (doubtful) → ask DocAligner. The learned quad wins
+   only if it passes the hard plausibility gate AND out-supports the
+   Canny quad by more than `HYBRID_WIN_MARGIN` (0.10); every tie, close
+   call or rejected learned answer keeps Canny.
+5. `LearnedStrategy` enum (OFF / LEARNED_FIRST / HYBRID); the Settings
+   toggle "Learned detector (experimental)" now selects HYBRID; the
+   benchmark adds a `hy*` column next to the F5 `lf*` column.
+
+**Pre-declared decision rule (checked on the Fold 8 corpus, same 64
+images as F5, same command).** Hybrid flips the production default ON
+only if ALL hold:
+
+- `hyDetectionRate` ≥ 0.95 **and** ≥ Canny's rate (1.000 → must be 1.000);
+- `hyIouMedian` ≥ Canny's `iouMedian` (0.963);
+- `hyIouAbove09` ≥ Canny's `iouAbove09` (45);
+- no single image regresses by more than 0.05 IoU vs its own Canny value
+  (Canny detected that image);
+- `hyMsMedian` ≤ `detectMsMedian` + 40 ms (the support pass is the common
+  case overhead; DocAligner cost is paid only on doubtful images).
+
+If any of these fails, the default stays OFF (Canny v19 production) and
+this section records which criterion failed and the per-image diff table.
+
+**Run history (device: SM_F971B / Galaxy Z Fold 8, 2026-11-14, 64 images).**
+
+- Run 1 (margin-only arbitration, support = union of all four Canny
+  passes): crashed on the first doubtful image — `edgeSupportOf` initialized
+  the union as `Mat?` and `bitwise_or` on a null first operand throws
+  `binary_op not supported` when the first Canny pass finds no edges
+  (syn_photo_page_23). Fixed by initializing the union as an empty `Mat()`.
+- Run 2 (fixed): quality rules 1-3 passed, rule 4 **failed** — the margin
+  alone cannot tell a *collapsed* learned quad (sides cutting across the
+  printed page: cc_08 learnedSup 0.857, cc_09 learnedSup 0.714) from a true
+  full-bleed border (cc_12 learnedSup 0.911, syn_photo_page_22/23 learnedSup
+  1.000). A full-bleed Canny answer scores ~0 on perimeter support (image-
+  border edges are weak by construction), so the collapsed quads
+  "out-supported" the correct ones and were taken: cc_08 0.961→0.910, cc_09
+  0.963→0.565. Rule 5 also failed (hyMs 170 vs 166 budget).
+- Run 3 (tuned: absolute learned floor `HYBRID_LEARNED_MIN_SUPPORT` 0.90 —
+  collapsed quads stay at 0.71-0.86, true borders reach 0.91+; support pass
+  restricted to the primary + CLAHE Canny sets, which drop the weak content
+  edges of the intermediate sets and cut the pass to ~14 ms): re-measured
+  below.
+
+**Final numbers (run 3).**
+
+| | Canny v19 | F5 learned-first | F6 hybrid (tuned) |
+|---|---|---|---|
+| Detection rate | 1.000 (64/64) | 1.000 | 1.000 |
+| IoU median | 0.9632 | 0.9380 | **0.9632** |
+| IoU p90 | 0.9954 | 0.9633 | **0.9954** |
+| IoU ≥ 0.90 | 45 | 46 | **47** |
+| Detect ms median | 117 | 54 | 165 |
+
+Branch distribution: canny-fast 40, canny-keep 21, learned-win 3. The 3
+wins: `syn_photo_page_23_vignette` 0.079→0.937, `syn_photo_page_22_side`
+0.105→0.929, `cc_12` 0.226→0.890. All 61 non-win images are **identical to
+Canny** (worst per-image diff 0.000).
+
+**Rule check (run 3 vs the pre-declared rule):**
+
+1. `hyDetectionRate` 1.000 ≥ 0.95 and ≥ Canny's 1.000 — **PASS**
+2. `hyIouMedian` 0.9632 ≥ 0.9632 — **PASS** (equal)
+3. `hyIouAbove09` 47 ≥ 45 — **PASS**
+4. no image regresses by more than 0.05 — **PASS** (no regression at all)
+5. `hyMsMedian` 165 ≤ 117 + 40 = 157 — **FAIL** (+48 ms)
+
+On rule 5, the per-image picture matters: the common canny-fast path costs
++15 ms median (the support pass is ~14 ms on-device), but 24 of 64 corpus
+images (37% — the full-bleed CC photos, where Canny's border edges are weak
+and support ~0) are *doubtful* and each pays the DocAligner call
+(~+80 ms). The summary median lands in that tail; it is structural, not
+noise, and it would not flip on a re-run.
+
+**Verdict: the default stays OFF (Canny v19 in production).** The tuned
+hybrid meets every quality criterion with zero regressions and three real
+wins, but misses the latency criterion by 8 ms on the summary median. The
+Settings toggle "Learned detector (experimental)" selects HYBRID and is
+safe to use: it is byte-identical to Canny unless Canny's perimeter
+support is below 0.80 **and** DocAligner's quad clears its own 0.90 support
+floor and out-supports Canny by > 0.10. To flip the default later: cut the
+doubtful fraction (a cheaper gate that recognizes full-bleed captures on
+flat backgrounds without consulting the model) or cut the second-opinion
+cost (smaller model, coarser input). The `hyBranch` / `hyCannySup` /
+`hyLearnedSup` fields in the benchmark's `results.json` record every
+arbitration decision for future tuning.

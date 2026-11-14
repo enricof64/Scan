@@ -28,6 +28,112 @@ import kotlin.math.roundToInt
  * by the androidTest eval benchmark (DocumentEvalBenchmark) to measure the
  * full pipeline geometry over a corpus of real document photos.
  */
+/**
+ * Which corner detector answers (F5/F6). Production default is [OFF] until
+ * the benchmark verdict says otherwise.
+ */
+enum class LearnedStrategy {
+    /** Canny v19 only. The historic production path (byte-identical). */
+    OFF,
+
+    /** F5: learned first, Canny fallback. Kept for the benchmark columns. */
+    LEARNED_FIRST,
+
+    /**
+     * F6: Canny first; the learned detector is consulted only when the
+     * Canny quad's perimeter edge support is doubtful, and it wins only by
+     * out-supporting Canny by a margin (ties go to Canny).
+     */
+    HYBRID,
+}
+
+/** Canny threshold sets mirroring the offline Python harness 1:1. */
+internal val CANNY_SETS = listOf(40.0 to 120.0, 20.0 to 80.0, 70.0 to 180.0)
+
+/** Extra Canny set on contrast-normalized gray. */
+internal val CLAHE_SET = 30.0 to 90.0
+
+/** Long-side dimension of the detection working space. */
+internal const val WORK = 1000.0
+
+internal fun workScale(w: Int, h: Int): Double = WORK / maxOf(w, h)
+
+/** Round half-to-even (keeps the work size identical to the Python harness). */
+internal fun halfEven(v: Double): Double {
+    val f = kotlin.math.floor(v)
+    val diff = v - f
+    return when {
+        diff > 0.5 -> f + 1
+        diff < 0.5 -> f
+        f % 2 == 0.0 -> f
+        else -> f + 1
+    }
+}
+
+/** Per-side fraction of sampled points sitting on/near an edge pixel
+ *  (14 samples per side, band = 3 px). A true document boundary has an
+ *  edge line running along every side; a winner whose sides cut through
+ *  open paper shows weak sides. Mirrors improved.side_supports() 1:1. */
+internal fun sideSupports(q: DoubleArray, edges: Mat): DoubleArray {
+    val band = 3
+    val dil = Mat()
+    Imgproc.dilate(
+        edges, dil,
+        Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size((2 * band + 1).toDouble(), (2 * band + 1).toDouble()))
+    )
+    val ew = dil.cols()
+    val eh = dil.rows()
+    val buf = ByteArray(ew * eh)
+    dil.get(0, 0, buf)
+    dil.release()
+    val k = 14
+    val out = DoubleArray(4)
+    for (i in 0 until 4) {
+        val ax = q[2 * i]
+        val ay = q[2 * i + 1]
+        val j = (i + 1) % 4
+        val bx = q[2 * j]
+        val by = q[2 * j + 1]
+        var hit = 0
+        var total = 0
+        for (s in 0 until k) {
+            val t = 0.08 + s * (0.92 - 0.08) / (k - 1)
+            val xi = Math.round(ax + t * (bx - ax)).toInt()
+            val yi = Math.round(ay + t * (by - ay)).toInt()
+            if (xi in 0 until ew && yi in 0 until eh) {
+                total++
+                if ((buf[yi * ew + xi].toInt() and 0xFF) > 0) hit++
+            }
+        }
+        out[i] = if (total == 0) 0.0 else hit.toDouble() / total
+    }
+    return out
+}
+
+/** Support of one segment against a pre-dilated edge buffer (band = 3 px,
+ *  14 samples). Inner loop of [sideSupports], factored out so [snapMaskQuad]'s
+ *  offset search can reuse one dilated buffer instead of re-dilating per
+ *  candidate offset. */
+internal fun segSupport(
+    ax: Double,
+    ay: Double,
+    bx: Double,
+    by: Double,
+    buf: ByteArray,
+    ew: Int,
+    eh: Int,
+): Double {
+    val k = 14
+    var hit = 0
+    for (s in 0 until k) {
+        val t = 0.08 + s * (0.92 - 0.08) / (k - 1)
+        val xi = Math.round(ax + t * (bx - ax)).toInt()
+        val yi = Math.round(ay + t * (by - ay)).toInt()
+        if (xi in 0 until ew && yi in 0 until eh && (buf[yi * ew + xi].toInt() and 0xFF) > 0) hit++
+    }
+    return hit.toDouble() / k
+}
+
 object ScanPipeline {
 
     /** One scan: the detected document quad and the warped, cropped page bitmap. */
@@ -42,26 +148,168 @@ object ScanPipeline {
     var quadDebugSink: ((List<Map<String, Any?>>) -> Unit)? = null
 
     /**
-     * Optional learned-detector adapter (F5): when set, [detectQuad] with
-     * [learnedFirst] tries it before the Canny detector. Set once at app
-     * startup (the ONNX model needs the app context); null in unit tests
-     * unless injected.
+     * Optional learned-detector adapter (F5): when set, [detectQuad] with a
+     * learned [LearnedStrategy] can consult it. Set once at app startup (the
+     * ONNX model needs the app context); null in unit tests unless injected.
      */
     var learnedDetector: ((Bitmap) -> FloatArray?)? = null
 
+    /** F6: a Canny quad whose perimeter edge support is at least this is
+     *  trusted as-is and the learned detector is not consulted (fast path). */
+    const val HYBRID_CANNY_GATE = 0.80
+
+    /** F6: the learned quad must out-support the Canny quad by more than
+     *  this much to win the arbitration; ties and noise go to Canny. */
+    const val HYBRID_WIN_MARGIN = 0.10
+
+    /** F6: absolute edge-support floor for the learned quad in the
+     *  arbitration. A learned quad may override a Canny quad only when its
+     *  own perimeter sits almost entirely on real edges. Corpus data:
+     *  DocAligner's collapsed quads (sides cutting across a printed page)
+     *  top out around 0.86, while quads on a true page border reach 0.91
+     *  and up — the floor sits between the two. Below it the Canny quad
+     *  is kept, no matter how much better-supported the learned one is. */
+    const val HYBRID_LEARNED_MIN_SUPPORT = 0.90
+
     /**
      * Returns TL, TR, BR, BL corner coordinates in source-bitmap space, or
-     * null. With [learnedFirst] (F5, opt-in in Settings) the learned detector
-     * is tried first and its answer is used unless it is a hard failure;
-     * otherwise the Canny v19 detector runs. Default false: byte-identical to
-     * the historic Canny-only path.
+     * null. [LearnedStrategy.OFF] (default) is byte-identical to the
+     * historic Canny-only path. [LearnedStrategy.LEARNED_FIRST] (F5) tries
+     * the learned detector first. [LearnedStrategy.HYBRID] (F6) runs Canny
+     * first and consults the learned detector only when the Canny quad's
+     * edge support is doubtful; the learned quad wins only when its own
+     * support clears [HYBRID_LEARNED_MIN_SUPPORT] and it out-supports Canny
+     * by [HYBRID_WIN_MARGIN].
      */
-    fun detectQuad(src: Bitmap, learnedFirst: Boolean = false): FloatArray? {
-        if (learnedFirst) {
-            val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
-            if (acceptLearnedQuad(learned, src.width, src.height)) return learned
+    fun detectQuad(src: Bitmap, strategy: LearnedStrategy = LearnedStrategy.OFF): FloatArray? =
+        when (strategy) {
+            LearnedStrategy.OFF -> QuadDetector.detect(src)
+            LearnedStrategy.LEARNED_FIRST -> {
+                val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
+                if (acceptLearnedQuad(learned, src.width, src.height)) learned
+                else QuadDetector.detect(src)
+            }
+            LearnedStrategy.HYBRID -> hybridDetect(src).quad
         }
-        return QuadDetector.detect(src)
+
+    /**
+     * F6 hybrid strategy: Canny first, the learned detector as second
+     * opinion. A Canny quad whose perimeter sits on real edges (support >=
+     * [HYBRID_CANNY_GATE]) is trusted as-is — that is the common case and
+     * costs nothing extra. When Canny's support is doubtful (a full-bleed
+     * grab on a flat background, a half-page read), the learned detector
+     * answers and the better-supported quad wins. F5 data: learned-first
+     * fixed Canny's collapses (0.105 -> 0.929) but regressed where Canny was
+     * right (0.963 -> 0.565); support arbitration keeps the wins and drops
+     * the regressions.
+     */
+    /**
+     * F6 hybrid outcome: the winning quad plus the evidence, for
+     * diagnostics (the benchmark records the branch and per-quad supports).
+     */
+    data class HybridDecision(
+        val quad: FloatArray?,
+        /** canny-fast | canny-keep | learned-win | learned-only | none */
+        val branch: String,
+        val cannySupport: Double?,
+        val learnedSupport: Double?,
+    )
+
+    fun hybridDetect(src: Bitmap): HybridDecision {
+        val canny = QuadDetector.detect(src)
+        if (canny == null) {
+            val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
+            if (!acceptLearnedQuad(learned, src.width, src.height)) {
+                return HybridDecision(null, "none", null, null)
+            }
+            return HybridDecision(learned, "learned-only", null, learned?.let { edgeSupportOf(it, src) })
+        }
+        val cannySup = edgeSupportOf(canny, src)
+        if (cannySup >= HYBRID_CANNY_GATE) {
+            return HybridDecision(canny, "canny-fast", cannySup, null)
+        }
+        val learned = runCatching { learnedDetector?.invoke(src) }.getOrNull()
+        val learnedSup = learned?.let { edgeSupportOf(it, src) }
+        val picked = hybridPick(canny, learned, cannySup, learnedSup ?: 0.0, src.width, src.height)
+        val branch = if (learned != null && picked === learned) "learned-win" else "canny-keep"
+        return HybridDecision(picked, branch, cannySup, learnedSup)
+    }
+
+    /**
+     * F6 arbitration, pure geometry: given both quads and their perimeter
+     * edge support, pick the winner. The learned quad wins only if its
+     * support clears the absolute floor [HYBRID_LEARNED_MIN_SUPPORT] (its
+     * sides must run along real edges in their own right — collapsed quads
+     * that cut across a printed page pick up content edges and must not be
+     * let through), it is acceptable (no [QuadPlausibility] hard failure)
+     * AND it out-supports Canny by more than [HYBRID_WIN_MARGIN]. Every
+     * tie, close call and rejected learned answer keeps the Canny quad.
+     * Unit-tested.
+     */
+    fun hybridPick(
+        canny: FloatArray,
+        learned: FloatArray?,
+        cannySupport: Double,
+        learnedSupport: Double,
+        frameWidth: Int,
+        frameHeight: Int,
+    ): FloatArray {
+        if (learned == null) return canny
+        if (learnedSupport < HYBRID_LEARNED_MIN_SUPPORT) return canny
+        if (!acceptLearnedQuad(learned, frameWidth, frameHeight)) return canny
+        return if (learnedSupport > cannySupport + HYBRID_WIN_MARGIN) learned else canny
+    }
+
+    /**
+     * F6: perimeter edge support of an arbitrary quad in source-bitmap
+     * space, measured against the primary and CLAHE Canny passes (same
+     * work size and thresholds as the Canny v19 detector, unioned). Mean
+     * per-side fraction of sampled points on/near an edge (14 samples per
+     * side, 3 px band): ~1.0 when every side runs along a real edge, ~0
+     * when the quad cuts through flat space. The intermediate threshold
+     * sets are deliberately excluded: they mostly add weak edges (printed
+     * content, texture) that would inflate the support of a quad crossing a
+     * page, and this pass runs on every doubtful image, so it must stay
+     * cheap.
+     */
+    fun edgeSupportOf(quad: FloatArray, src: Bitmap): Double {
+        if (!OpenCVLoader.initLocal()) return 0.0
+        val rgba = Mat()
+        org.opencv.android.Utils.bitmapToMat(src, rgba)
+        val scale = workScale(src.width, src.height)
+        val small = Mat()
+        Imgproc.resize(
+            rgba, small,
+            Size(halfEven(src.width * scale), halfEven(src.height * scale)),
+            0.0, 0.0, Imgproc.INTER_AREA,
+        )
+        rgba.release()
+        val gray = Mat()
+        Imgproc.cvtColor(small, gray, Imgproc.COLOR_RGBA2GRAY)
+        Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
+        val grayC = Mat()
+        Imgproc.createCLAHE(3.0, Size(8.0, 8.0)).apply(gray, grayC)
+        small.release()
+        // Primary + CLAHE passes only (see the KDoc): the two passes that
+        // catch real page borders without the weak content edges of the
+        // intermediate threshold sets.
+        val passes = ArrayList<Triple<Double, Double, Mat>>(2)
+        passes.add(Triple(CANNY_SETS[0].first, CANNY_SETS[0].second, gray))
+        passes.add(Triple(CLAHE_SET.first, CLAHE_SET.second, grayC))
+        val union = Mat()
+        for ((lo, hi, passGray) in passes) {
+            val edges = Mat()
+            Imgproc.Canny(passGray, edges, lo, hi)
+            Imgproc.dilate(edges, edges, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0)))
+            if (union.empty()) edges.copyTo(union) else Core.bitwise_or(union, edges, union)
+            edges.release()
+        }
+        val qw = DoubleArray(quad.size) { quad[it].toDouble() * scale }
+        val sups = sideSupports(qw, union)
+        gray.release()
+        grayC.release()
+        union.release()
+        return if (sups.isEmpty()) 0.0 else sups.average()
     }
 
     /**
@@ -125,10 +373,6 @@ object ScanPipeline {
 /** Paper-mask quad detection, self-contained so the benchmark needs no GMS and no native libs. */
 private object QuadDetector {
 
-    // Tuning constants mirror the offline Python harness (improved.py) 1:1.
-    private const val WORK = 1000.0
-    private val CANNY_SETS = listOf(40.0 to 120.0, 20.0 to 80.0, 70.0 to 180.0)
-    private val CLAHE_SET = 30.0 to 90.0 // extra Canny set on contrast-normalized gray
     private const val MIN_AREA_FRAC = 0.012
     private const val SUPPORT_TAU = 0.30
     private const val PAPER_STRONG = 0.05 // paperness floor for crisp-edge quads (saturated
@@ -1473,70 +1717,6 @@ private object QuadDetector {
         return if (0.5 * a0 <= a1 && a1 <= 3.0 * a0) q2c else q
     }
 
-    /** Per-side fraction of sampled points sitting on/near an edge pixel
-     *  (14 samples per side, band = 3 px). A true document boundary has an
-     *  edge line running along every side; a winner whose sides cut through
-     *  open paper shows weak sides. Mirrors improved.side_supports() 1:1. */
-    private fun sideSupports(q: DoubleArray, edges: Mat): DoubleArray {
-        val band = 3
-        val dil = Mat()
-        Imgproc.dilate(
-            edges, dil,
-            Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size((2 * band + 1).toDouble(), (2 * band + 1).toDouble()))
-        )
-        val ew = dil.cols()
-        val eh = dil.rows()
-        val buf = ByteArray(ew * eh)
-        dil.get(0, 0, buf)
-        dil.release()
-        val k = 14
-        val out = DoubleArray(4)
-        for (i in 0 until 4) {
-            val ax = q[2 * i]
-            val ay = q[2 * i + 1]
-            val j = (i + 1) % 4
-            val bx = q[2 * j]
-            val by = q[2 * j + 1]
-            var hit = 0
-            var total = 0
-            for (s in 0 until k) {
-                val t = 0.08 + s * (0.92 - 0.08) / (k - 1)
-                val xi = Math.round(ax + t * (bx - ax)).toInt()
-                val yi = Math.round(ay + t * (by - ay)).toInt()
-                if (xi in 0 until ew && yi in 0 until eh) {
-                    total++
-                    if ((buf[yi * ew + xi].toInt() and 0xFF) > 0) hit++
-                }
-            }
-            out[i] = if (total == 0) 0.0 else hit.toDouble() / total
-        }
-        return out
-    }
-
-    /** Support of one segment against a pre-dilated edge buffer (band = 3 px,
-     *  14 samples). Inner loop of [sideSupports], factored out so [snapMaskQuad]'s
-     *  offset search can reuse one dilated buffer instead of re-dilating per
-     *  candidate offset. */
-    private fun segSupport(
-        ax: Double,
-        ay: Double,
-        bx: Double,
-        by: Double,
-        buf: ByteArray,
-        ew: Int,
-        eh: Int,
-    ): Double {
-        val k = 14
-        var hit = 0
-        for (s in 0 until k) {
-            val t = 0.08 + s * (0.92 - 0.08) / (k - 1)
-            val xi = Math.round(ax + t * (bx - ax)).toInt()
-            val yi = Math.round(ay + t * (by - ay)).toInt()
-            if (xi in 0 until ew && yi in 0 until eh && (buf[yi * ew + xi].toInt() and 0xFF) > 0) hit++
-        }
-        return hit.toDouble() / k
-    }
-
     /**
      * t1245u-hard2: if exactly one corner of an opposite pair sits on the frame
      * and the other is clearly inset, snap the on-frame corner onto the inset
@@ -1788,17 +1968,6 @@ private object QuadDetector {
         val a0 = polyArea(q0)
         val a1 = polyArea(q1c)
         return if (a1 >= 0.4 * a0) q1c else q0
-    }
-
-    private fun halfEven(v: Double): Double {
-        val f = kotlin.math.floor(v)
-        val diff = v - f
-        return when {
-            diff > 0.5 -> f + 1
-            diff < 0.5 -> f
-            f % 2 == 0.0 -> f
-            else -> f + 1
-        }
     }
 
     private fun polyArea(q: DoubleArray): Double {
